@@ -35,6 +35,12 @@ router.post(
       return res.json({ received: true, matched: false });
     }
 
+    // A subscription checkout begins as a ps- Payment Session. Once Xendit
+    // creates the recurring plan, retain its repl_ id so later cancellation
+    // deactivates the actual plan rather than the completed checkout session.
+    if (data.id?.startsWith("repl_") || data.plan_id?.startsWith("repl_")) {
+      membership.xenditPlanId = data.plan_id || data.id;
+    }
     await applyEvent(membership, event);
     res.json({ received: true, matched: true, status: membership.status });
   })

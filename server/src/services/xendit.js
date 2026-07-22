@@ -22,10 +22,10 @@ function authHeader() {
   return "Basic " + Buffer.from(SECRET + ":").toString("base64");
 }
 
-async function call(path, { method = "POST", body } = {}) {
+async function call(path, { method = "POST", body, headers = {} } = {}) {
   const res = await fetch(BASE + path, {
     method,
-    headers: { Authorization: authHeader(), "Content-Type": "application/json" },
+    headers: { Authorization: authHeader(), "Content-Type": "application/json", ...headers },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -119,8 +119,20 @@ export async function createSubscription({ referenceId, customerId, tier, succes
 export async function cancelSubscription(remoteId) {
   if (!isLive() || !remoteId || remoteId.startsWith("sim_")) return { ok: true, simulated: true };
   if (remoteId.startsWith("ps-")) {
-    await call(`/sessions/${encodeURIComponent(remoteId)}/cancel`, { method: "POST" });
-    return { ok: true, type: "session" };
+    const session = await call(`/sessions/${encodeURIComponent(remoteId)}`, { method: "GET" });
+    if (session.status === "ACTIVE") {
+      await call(`/sessions/${encodeURIComponent(remoteId)}/cancel`, { method: "POST" });
+      return { ok: true, type: "session" };
+    }
+    if (session.status === "COMPLETED" && session.payment_token_id) {
+      await call(`/v3/payment_tokens/${encodeURIComponent(session.payment_token_id)}/cancel`, {
+        method: "POST",
+        headers: { "api-version": "2024-11-11" },
+      });
+      return { ok: true, type: "payment_token" };
+    }
+    if (["CANCELED", "EXPIRED"].includes(session.status)) return { ok: true, type: "session" };
+    throw Object.assign(new Error(`Xendit session cannot be cancelled while ${session.status || "in an unknown state"}`), { status: 409 });
   }
   await call(`/recurring/plans/${encodeURIComponent(remoteId)}/deactivate`, { method: "POST" });
   return { ok: true };
