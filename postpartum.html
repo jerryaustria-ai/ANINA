@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Get Your Core Back After Baby — Coach Joycee × ANINA</title>
+  <meta name="description" content="Diastasis recti after birth is common — and trainable. Rebuild your core the right way with ANINA's Coach Joycee. Book your postpartum assessment — BF Homes, Parañaque, or online." />
+  <meta property="og:title" content="Your core can come back after baby — Coach Joycee × ANINA" />
+  <meta property="og:description" content="Diastasis recti is common and trainable. Book your postpartum core assessment with Coach Joycee." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="assets/images/coach-hero.jpg" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/postpartum.css" />
+</head>
+<body class="pp">
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="pp-bar" id="ppBar">
+    <a class="pp-bar__brand" href="index.html" aria-label="ANINA Wellness Sanctuary">
+      <b>ANINA</b><span>Wellness Sanctuary</span>
+    </a>
+    <a href="#book" class="btn btn--solid pp-bar__cta">Book Now</a>
+  </header>
+
+  <!-- ============ POSTER HERO ============ -->
+  <section class="pp-hero">
+    <div class="pp-hero__media">
+      <img src="assets/images/coach-hero.jpg" alt="Coach Joycee training at ANINA" />
+    </div>
+    <div class="pp-hero__inner reveal">
+      <p class="pp-hero__eyebrow">ANINA &times; Coach Joycee &middot; BF Homes, Para&ntilde;aque</p>
+      <h1 class="poster">Your core can<br />come back<em>&mdash;after baby.</em></h1>
+      <p>That soft, domed belly that crunches won't fix? It's called diastasis recti.
+        It's common, it's <strong>not your fault</strong> &mdash; and it's trainable.</p>
+      <div class="pp-chips">
+        <span class="pp-chip">No more crunches</span>
+        <span class="pp-chip">Deep-core first</span>
+        <span class="pp-chip">1:1 with Coach Joycee</span>
+      </div>
+      <div class="pp-cta-row">
+        <a href="#book" class="btn btn--solid btn--xl">Book Your Assessment</a>
+        <a href="#how" class="ghostlink">How it works &darr;</a>
+      </div>
+      <p class="pp-trust">BF Homes, Para&ntilde;aque, or online &middot; We reply within 1 business day.</p>
+    </div>
+  </section>
+
+  <!-- ============ PROOF STRIP ============ -->
+  <section class="pp-strip" id="how">
+    <div class="pp-strip__wrap reveal">
+      <h2>Crunches won't close the gap.<br /><em>Reconnecting your deep core will.</em></h2>
+      <div class="pp-mini-steps">
+        <div class="pp-mini-step"><b>01</b><span>Assess your separation</span></div>
+        <div class="pp-mini-step"><b>02</b><span>Reconnect the deep core</span></div>
+        <div class="pp-mini-step"><b>03</b><span>Rebuild real strength</span></div>
+      </div>
+
+      <p class="pp-strip__quote">
+        &ldquo;The most supportive coach you'll ever have &mdash; and one of the most humble too.&rdquo;
+        <small>Coach Joycee client</small>
+      </p>
+
+      <div class="pp-coachline">
+        <img src="assets/images/coach-joycee.jpg" alt="Coach Joycee Bautista" />
+        <p>With <b>Coach Joycee Bautista</b> &mdash; ANINA's Women's Health &amp; Mobility coach and
+          former collegiate/PVL athlete. Postpartum, done right.</p>
+      </div>
+
+      <div><a href="#book" class="btn btn--solid btn--xl">Book Your Assessment</a></div>
+    </div>
+  </section>
+
+  <!-- ============ BOOKING (calendar) ============ -->
+  <section class="pp-section" id="book">
+    <div class="reveal" style="max-width:720px;margin-bottom:2rem;">
+      <p class="eyebrow"><span class="num">&#10022;</span> Start here</p>
+      <h2 class="pp-lead">Book your postpartum core assessment.</h2>
+      <p class="pp-body" style="margin-top:1rem;">Drag across the calendar to pick one or more times that suit you &mdash; we'll confirm by email within one business day.</p>
+    </div>
+
+    <div class="cal reveal" id="cal" data-source="postpartum-landing" data-form="ppForm" data-service-default="Postpartum core assessment">
+      <div class="cal__toolbar">
+        <div class="cal__nav">
+          <button class="cal__btn" id="calPrev" aria-label="Previous week" type="button">&#8249;</button>
+          <button class="cal__btn" id="calNext" aria-label="Next week" type="button">&#8250;</button>
+          <button class="cal__today" id="calToday" type="button">This week</button>
+        </div>
+        <div class="cal__range" id="calRange"></div>
+      </div>
+      <div class="cal__scroll">
+        <div class="cal__inner">
+          <div class="cal__head" id="calHead"></div>
+          <div class="cal__body" id="calBody"></div>
+        </div>
+      </div>
+      <p class="cal__hint">Drag down a column to select a longer block. Tap a block to remove it. Hatched slots are outside opening hours.</p>
+    </div>
+
+    <div class="book__grid book__grid--cal">
+      <div class="book__selected reveal">
+        <h3>Your selected times</h3>
+        <ul class="chips" id="calChips"><li class="chips__empty">Nothing selected yet &mdash; drag on the calendar above.</li></ul>
+        <dl class="pp-facts" style="margin-top:2rem;">
+          <div><dt>Where</dt><dd>ANINA &middot; BF Homes, Para&ntilde;aque &mdash; or online</dd></div>
+          <div><dt>Who it's for</dt><dd>Moms at any stage &mdash; 6 weeks to years postpartum</dd></div>
+          <div><dt>Ask us</dt><dd>hello@aninasanctuary.ph</dd></div>
+        </dl>
+      </div>
+
+      <form class="pp-form reveal" id="ppForm" novalidate>
+        <div class="field">
+          <label for="pp-name">Your name</label>
+          <input type="text" id="pp-name" name="name" required placeholder="Maria" autocomplete="name" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="pp-email">Email</label>
+            <input type="email" id="pp-email" name="email" required placeholder="you@email.com" autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="pp-phone">Mobile</label>
+            <input type="tel" id="pp-phone" name="phone" required placeholder="0917 000 0000" autocomplete="tel" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="pp-stage">How far postpartum?</label>
+            <select id="pp-stage" name="stage" required>
+              <option value="" disabled selected>Select</option>
+              <option>Still pregnant</option>
+              <option>0&ndash;3 months</option>
+              <option>3&ndash;6 months</option>
+              <option>6&ndash;12 months</option>
+              <option>1+ year</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="pp-format">Prefer</label>
+            <select id="pp-format" name="format" required>
+              <option value="" disabled selected>Select</option>
+              <option>In person (BF Homes)</option>
+              <option>Online</option>
+              <option>Either is fine</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn--solid btn--full" id="ppSubmit">Request My Assessment</button>
+        <p class="pp-status" id="ppStatus" role="status" aria-live="polite"></p>
+        <p class="pp-disclaimer">
+          Fitness coaching, not medical care &mdash; it complements, never replaces, your OB-GYN.
+          Please get your doctor's clearance before starting, and tell us first if you have
+          pain, a hernia, or a large separation so we can guide you safely.
+        </p>
+      </form>
+    </div>
+  </section>
+
+  <footer class="pp-footer">
+    <div class="pp-footer__wrap">
+      <div class="pp-footer__brand">
+        <b>ANINA</b>
+        <p>Wellness Sanctuary &mdash; BF Homes, Para&ntilde;aque</p>
+      </div>
+      <div><a href="index.html">&larr; Back to the main site</a></div>
+    </div>
+    <div class="pp-footer__base">
+      <p>&copy; <span id="ppYear"></span> ANINA Wellness Sanctuary &middot; Coaching with Joycee Bautista</p>
+      <p>hello@aninasanctuary.ph</p>
+    </div>
+  </footer>
+
+  <!-- ============ STICKY CTA ============ -->
+  <div class="pp-sticky" id="ppSticky">
+    <p>Your strongest core is still ahead of you.</p>
+    <a href="#book" class="btn btn--solid">Book Your Assessment</a>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/booking.js"></script>
+  <script src="js/postpartum.js"></script>
+</body>
+</html>

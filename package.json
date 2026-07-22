@@ -1,0 +1,23 @@
+{
+  "name": "anina-wellness-sanctuary",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">",
+  "main": "index.js",
+  "scripts": {
+    "dev": "npm run dev:full",
+    "dev:full": "node scripts/dev-full.cjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patrickongwong/anina-wellness-sanctuary.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/patrickongwong/anina-wellness-sanctuary/issues"
+  },
+  "homepage": "https://github.com/patrickongwong/anina-wellness-sanctuary#readme"
+}

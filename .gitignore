@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+._*
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# logs / tmp
+*.log
+assets/images/*.log
+
+# local harness settings
+.claude/
