@@ -34,9 +34,13 @@ export default function ClientMembership() {
     setBusy(true); setMsg(null);
     try {
       const res = await api("/memberships/subscribe", { method: "POST", body: { tierId } });
-      if (res.checkoutUrl) { window.location.href = res.checkoutUrl; return; } // live: go to Xendit
       await load();
-      setMsg({ kind: "ok", text: "Subscription started. Complete payment below to activate." });
+      setMsg({
+        kind: "ok",
+        text: res.checkoutUrl
+          ? "Subscription started. Open the secure checkout below; it will stay separate from this page."
+          : "Subscription started. Complete payment below to activate.",
+      });
     } catch (e) { setMsg({ kind: "err", text: e.message }); }
     finally { setBusy(false); }
   }
@@ -80,7 +84,7 @@ export default function ClientMembership() {
             {membership.status === "pending" && membership.simulated &&
               <button className="btn" onClick={simulatePay} disabled={busy}>Complete payment (simulated)</button>}
             {membership.status === "pending" && !membership.simulated && membership.checkoutUrl &&
-              <a className="btn" href={membership.checkoutUrl}>Continue to checkout</a>}
+              <a className="btn" href={membership.checkoutUrl} target="_blank" rel="noopener noreferrer">Open secure checkout</a>}
             <button className="btn danger" onClick={cancel} disabled={busy}>Cancel membership</button>
           </div>
         </div>
