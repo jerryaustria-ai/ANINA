@@ -116,7 +116,7 @@ export async function createSubscription({ referenceId, customerId, tier, succes
 }
 
 // Cancel a pending Payment Session, or deactivate a created recurring plan.
-export async function cancelSubscription(remoteId) {
+export async function cancelSubscription(remoteId, referenceId = "") {
   if (!isLive() || !remoteId || remoteId.startsWith("sim_")) return { ok: true, simulated: true };
   if (remoteId.startsWith("ps-")) {
     const session = await call(`/sessions/${encodeURIComponent(remoteId)}`, { method: "GET" });
@@ -125,6 +125,20 @@ export async function cancelSubscription(remoteId) {
       return { ok: true, type: "session" };
     }
     if (session.status === "COMPLETED" && session.payment_token_id) {
+      if (referenceId) {
+        const result = await call(`/recurring/plans?reference_id=${encodeURIComponent(referenceId)}`, {
+          method: "GET",
+          headers: { "api-version": "2026-01-01" },
+        });
+        const plan = result.data?.[0] || (Array.isArray(result) ? result[0] : null);
+        if (plan?.id && plan.status !== "INACTIVE") {
+          await call(`/recurring/plans/${encodeURIComponent(plan.id)}/deactivate`, {
+            method: "POST",
+            headers: { "api-version": "2026-01-01" },
+          });
+          return { ok: true, type: "plan", planId: plan.id };
+        }
+      }
       await call(`/v3/payment_tokens/${encodeURIComponent(session.payment_token_id)}/cancel`, {
         method: "POST",
         headers: { "api-version": "2024-11-11" },
@@ -134,6 +148,9 @@ export async function cancelSubscription(remoteId) {
     if (["CANCELED", "EXPIRED"].includes(session.status)) return { ok: true, type: "session" };
     throw Object.assign(new Error(`Xendit session cannot be cancelled while ${session.status || "in an unknown state"}`), { status: 409 });
   }
-  await call(`/recurring/plans/${encodeURIComponent(remoteId)}/deactivate`, { method: "POST" });
+  await call(`/recurring/plans/${encodeURIComponent(remoteId)}/deactivate`, {
+    method: "POST",
+    headers: { "api-version": "2026-01-01" },
+  });
   return { ok: true };
 }

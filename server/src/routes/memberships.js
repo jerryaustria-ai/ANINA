@@ -83,7 +83,8 @@ router.post(
     if (req.user.role !== "admin" && m.client.toString() !== req.user._id.toString()) {
       throw new HttpError(403, "Not your membership");
     }
-    await xendit.cancelSubscription(m.xenditPlanId);
+    const cancelled = await xendit.cancelSubscription(m.xenditPlanId, m.referenceId);
+    if (cancelled.planId) m.xenditPlanId = cancelled.planId;
     await applyEvent(m, "cancelled");
     res.json({ membership: m.toPublic() });
   })
