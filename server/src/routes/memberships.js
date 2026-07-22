@@ -10,8 +10,17 @@ import { applyEvent } from "../services/membership.js";
 const router = Router();
 router.use(requireAuth);
 
-const APP_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 const allowDevBilling = () => process.env.XENDIT_SIMULATION === "true" && !xendit.isLive();
+
+function appUrl(req) {
+  const configured = String(process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  // Xendit requires HTTPS return URLs. Ignore a stale localhost/http value on
+  // Render and derive the public origin from its forwarded request headers.
+  if (/^https:\/\//i.test(configured)) return configured;
+  const protocol = String(req.get("x-forwarded-proto") || req.protocol).split(",")[0].trim();
+  const host = req.get("x-forwarded-host") || req.get("host");
+  return `${protocol}://${host}`;
+}
 
 // GET /api/memberships/mine — the signed-in client's current membership.
 router.get(
@@ -36,12 +45,13 @@ router.post(
 
     const referenceId = `mem_${req.user._id}_${Date.now()}`;
     const customer = await xendit.createCustomer(req.user);
+    const publicUrl = appUrl(req);
     const sub = await xendit.createSubscription({
       referenceId,
       customerId: customer.id,
       tier,
-      successUrl: `${APP_URL}/membership?status=success`,
-      cancelUrl: `${APP_URL}/membership?status=cancelled`,
+      successUrl: `${publicUrl}/membership?status=success`,
+      cancelUrl: `${publicUrl}/membership?status=cancelled`,
     });
 
     const membership = await Membership.create({
