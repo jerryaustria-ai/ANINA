@@ -115,9 +115,13 @@ export async function createSubscription({ referenceId, customerId, tier, succes
   };
 }
 
-// Cancel/deactivate a recurring plan.
-export async function cancelSubscription(planId) {
-  if (!isLive() || !planId || planId.startsWith("sim_")) return { ok: true, simulated: true };
-  await call(`/recurring/plans/${planId}/deactivate`, { method: "POST" });
+// Cancel a pending Payment Session, or deactivate a created recurring plan.
+export async function cancelSubscription(remoteId) {
+  if (!isLive() || !remoteId || remoteId.startsWith("sim_")) return { ok: true, simulated: true };
+  if (remoteId.startsWith("ps-")) {
+    await call(`/sessions/${encodeURIComponent(remoteId)}/cancel`, { method: "POST" });
+    return { ok: true, type: "session" };
+  }
+  await call(`/recurring/plans/${encodeURIComponent(remoteId)}/deactivate`, { method: "POST" });
   return { ok: true };
 }
