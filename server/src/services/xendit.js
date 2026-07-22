@@ -79,7 +79,9 @@ export async function createSubscription({ referenceId, customerId, tier, succes
   }
   const interval = tier.interval === "YEAR" ? "MONTH" : tier.interval;
   const intervalCount = tier.interval === "YEAR" ? tier.intervalCount * 12 : tier.intervalCount;
-  const anchorDate = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const now = Date.now();
+  const expiresAt = new Date(now + 15 * 60 * 1000).toISOString();
+  const anchorDate = new Date(now + 16 * 60 * 1000).toISOString();
   const data = await call("/sessions", {
     body: {
       reference_id: referenceId,
@@ -89,6 +91,7 @@ export async function createSubscription({ referenceId, customerId, tier, succes
       currency: tier.currency,
       amount: tier.amount,
       country: "PH",
+      expires_at: expiresAt,
       subscription: {
         schedule: {
           interval,
