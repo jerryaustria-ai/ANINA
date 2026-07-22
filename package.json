@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "npm run dev:full",
     "dev:full": "node scripts/dev-full.cjs",
+    "build": "npm --prefix server ci && npm --prefix app ci && npm --prefix app run build",
+    "start": "npm --prefix server start",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=20.17.0"
   },
   "repository": {
     "type": "git",

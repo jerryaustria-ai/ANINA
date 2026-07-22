@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: anina
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
+      - key: MONGO_DB_NAME
+        value: ANINA
+      - key: XENDIT_SIMULATION
+        value: "true"
+      - key: ALLOW_DEV_LOGIN
+        value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URI
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false

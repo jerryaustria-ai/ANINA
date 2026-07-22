@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { connectDB } from "./config/db.js";
 import authRoutes from "./routes/auth.js";
@@ -31,8 +33,13 @@ app.use("/api/tiers", tierRoutes);
 app.use("/api/memberships", membershipRoutes);
 app.use("/api/webhooks", webhookRoutes);
 
-// 404
-app.use((req, res) => res.status(404).json({ error: "Not found" }));
+// In production, serve the Vite build from this same web service. API typos
+// remain JSON 404s; browser routes fall back to React's index.html.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const frontendDist = path.resolve(here, "../../app/dist");
+app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
+app.use(express.static(frontendDist));
+app.get("*", (req, res) => res.sendFile(path.join(frontendDist, "index.html")));
 
 // Central error handler
 app.use((err, req, res, next) => {
