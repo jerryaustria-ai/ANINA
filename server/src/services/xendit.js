@@ -115,6 +115,27 @@ export async function createSubscription({ referenceId, customerId, tier, succes
   };
 }
 
+export async function getSubscriptionStatus(remoteId, referenceId) {
+  if (!isLive()) return { status: "simulation", planId: remoteId };
+
+  let sessionStatus = "";
+  if (remoteId?.startsWith("ps-")) {
+    const session = await call(`/sessions/${encodeURIComponent(remoteId)}`, { method: "GET" });
+    sessionStatus = session.status || "";
+  }
+
+  if (referenceId) {
+    const result = await call(`/recurring/plans?reference_id=${encodeURIComponent(referenceId)}`, {
+      method: "GET",
+      headers: { "api-version": "2026-01-01" },
+    });
+    const plan = result.data?.[0] || (Array.isArray(result) ? result[0] : null);
+    if (plan) return { status: String(plan.status || "").toLowerCase(), planId: plan.id, sessionStatus };
+  }
+
+  return { status: sessionStatus.toLowerCase(), planId: remoteId, sessionStatus };
+}
+
 // Cancel a pending Payment Session, or deactivate a created recurring plan.
 export async function cancelSubscription(remoteId, referenceId = "") {
   if (!isLive() || !remoteId || remoteId.startsWith("sim_")) return { ok: true, simulated: true };

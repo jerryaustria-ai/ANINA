@@ -33,6 +33,14 @@ export async function applyEvent(membership, event) {
   const count = tier?.intervalCount || 1;
   const now = new Date();
 
+  // Reconciliation and a delayed webhook can report the same activation.
+  // Do not extend the paid period twice for that duplicate transition.
+  if (event === "activated" && membership.status === "active") {
+    membership.lastEvent = event;
+    await membership.save();
+    return membership;
+  }
+
   switch (event) {
     case "activated":
     case "cycle_succeeded": {

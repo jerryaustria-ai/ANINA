@@ -27,6 +27,19 @@ router.get(
   "/mine",
   asyncHandler(async (req, res) => {
     const m = await Membership.findOne({ client: req.user._id }).sort("-createdAt").populate("tier");
+    if (m && xendit.isLive() && ["pending", "past_due"].includes(m.status)) {
+      try {
+        const remote = await xendit.getSubscriptionStatus(m.xenditPlanId, m.referenceId);
+        if (remote.planId?.startsWith("repl_")) m.xenditPlanId = remote.planId;
+        if (remote.status === "active") await applyEvent(m, "activated");
+        else if (remote.status === "inactive") await applyEvent(m, "inactivated");
+        else if (m.isModified()) await m.save();
+      } catch (error) {
+        // Keep the membership page available during a temporary Xendit outage;
+        // webhooks or a later refresh will retry reconciliation.
+        console.warn("Xendit membership reconciliation failed:", error.message);
+      }
+    }
     res.json({ membership: m ? m.toPublic() : null, live: xendit.isLive() });
   })
 );
