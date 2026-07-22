@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "npm run dev:full",
     "dev:full": "node scripts/dev-full.cjs",
-    "build": "npm --prefix server ci && npm --prefix app ci && npm --prefix app run build",
+    "postinstall": "npm --prefix server ci && npm --prefix app ci && npm --prefix app run build",
+    "build": "npm run postinstall",
     "start": "npm --prefix server start",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
