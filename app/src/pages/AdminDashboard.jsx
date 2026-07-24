@@ -210,12 +210,17 @@ function ScheduleView() {
   }
 
   async function deleteSchedule(session) {
-    if (!window.confirm(`Permanently delete "${session.title}"? This is allowed only when it has no booking history.`)) return;
     setBusy(true);
     try {
+      const { bookings: relatedBookings } = await api(`/sessions/${session.id}/bookings`);
+      if (relatedBookings.length > 0) {
+        toast.error("This session cannot be deleted because it has existing bookings or spot requests. Please cancel the session instead.");
+        return;
+      }
+      if (!window.confirm("Are you sure you want to permanently delete this session? This action cannot be undone.")) return;
       await api(`/sessions/${session.id}`, { method: "DELETE" });
-      setSel(null); await load(); toast.success("Unused schedule permanently deleted.");
-    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
+      setSel(null); await load(); toast.success("Session deleted successfully.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -251,8 +256,8 @@ function ScheduleView() {
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
         footer={sel && <><button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
-          <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete</button>
-          {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel schedule</button>}</>}>
+          <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete Session</button>
+          {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel Session</button>}</>}>
         {sel && (
           <div>
             <div className="inst-row">

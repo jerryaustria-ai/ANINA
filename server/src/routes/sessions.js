@@ -10,6 +10,7 @@ import { findRoomConflict, findInstructorConflict, findClientConflict } from "..
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { assertScheduleBookable, assertScheduleDateNotPast } from "../services/scheduleTime.js";
 import { createNotification, notifyAdmins } from "../services/notifications.js";
+import { Notification } from "../models/Notification.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -277,13 +278,33 @@ router.delete(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const session = await ClassSession.findById(req.params.id);
-    if (!session) throw new HttpError(404, "Session not found");
-    const bookingCount = await Booking.countDocuments({ session: session._id });
-    if (bookingCount) {
-      throw new HttpError(409, "This schedule has booking history and cannot be deleted. Cancel it instead.");
+    const transaction = await mongoose.startSession();
+    let deleted = false;
+    try {
+      await transaction.withTransaction(async () => {
+        const classSession = await ClassSession.findById(req.params.id).session(transaction);
+        if (!classSession) throw new HttpError(404, "Session not found");
+
+        // Count every linked booking status, including cancelled and declined
+        // records, because they are still part of the client's history.
+        const bookingCount = await Booking.countDocuments({ session: classSession._id }).session(transaction);
+        if (bookingCount > 0) {
+          throw new HttpError(
+            409,
+            "This session cannot be deleted because it has existing bookings or spot requests. Please cancel the session instead."
+          );
+        }
+
+        // Only notification records can safely be removed with a session that
+        // has never held client history. Instructors/users/rooms are untouched.
+        await Notification.deleteMany({ relatedScheduleId: classSession._id }).session(transaction);
+        await ClassSession.deleteOne({ _id: classSession._id }).session(transaction);
+        deleted = true;
+      });
+    } finally {
+      await transaction.endSession();
     }
-    await session.deleteOne();
+    if (!deleted) throw new HttpError(409, "Session could not be deleted");
     res.json({ ok: true });
   })
 );
