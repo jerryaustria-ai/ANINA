@@ -30,6 +30,10 @@ const classSessionSchema = new mongoose.Schema(
 
     notes: { type: String, default: "" },
     color: { type: String, default: "" }, // falls back to room colour on the client
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    cancelledByRole: { type: String, enum: ["admin", "instructor", "client"], default: null },
+    cancelledAt: { type: Date, default: null },
+    cancellationReason: { type: String, default: "" },
   },
   { timestamps: true }
 );
@@ -55,6 +59,10 @@ classSessionSchema.methods.toPublic = function () {
     seatsLeft: Math.max(0, this.capacity - this.acceptedCount),
     notes: this.notes,
     color: this.color || (rm && rm.color) || "",
+    cancelledBy: this.cancelledBy,
+    cancelledByRole: this.cancelledByRole,
+    cancelledAt: this.cancelledAt,
+    cancellationReason: this.cancellationReason,
   };
 };
 

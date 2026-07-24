@@ -101,8 +101,11 @@ function ScheduleView() {
   const instructors = users.filter((user) => user.role === "instructor" && user.active);
   const activeSessions = sessions.filter((session) =>
     ["open", "confirmed", "rescheduled"].includes(session.status) && new Date(session.startAt) > new Date());
-  const selectedBookings = sel ? bookings.filter((booking) =>
-    booking.session?.id === sel.id && ["pending", "accepted", "waitlisted"].includes(booking.status)) : [];
+  const allSelectedBookings = sel ? bookings.filter((booking) => booking.session?.id === sel.id) : [];
+  const selectedBookings = allSelectedBookings.filter((booking) =>
+    ["pending", "accepted", "waitlisted"].includes(booking.status));
+  const historicalBookings = allSelectedBookings.filter((booking) =>
+    !["pending", "accepted", "waitlisted"].includes(booking.status));
   const serviceNames = [...new Set(sessions.map((session) => session.title).filter(Boolean))];
 
   const toggle = (id) => setHidden((h) => { const n = new Set(h); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -212,14 +215,18 @@ function ScheduleView() {
   async function deleteSchedule(session) {
     setBusy(true);
     try {
-      const { bookings: relatedBookings } = await api(`/sessions/${session.id}/bookings`);
-      if (relatedBookings.length > 0) {
-        toast.error("This session cannot be deleted because it has existing bookings or spot requests. Please cancel the session instead.");
+      const eligibility = await api(`/sessions/${session.id}/deletion-eligibility`);
+      if (!eligibility.eligible) {
+        toast.error(eligibility.wasCancelledByAssignedInstructor
+          ? "This session cannot be deleted because it still has an active booking or pending spot request."
+          : "The assigned Instructor must cancel this session before it can be deleted.");
         return;
       }
-      if (!window.confirm("Are you sure you want to permanently delete this session? This action cannot be undone.")) return;
-      await api(`/sessions/${session.id}`, { method: "DELETE" });
-      setSel(null); await load(); toast.success("Session deleted successfully.");
+      if (!window.confirm("This session was cancelled by the Instructor. Are you sure you want to permanently delete it? This action cannot be undone.")) return;
+      const result = await api(`/sessions/${session.id}`, { method: "DELETE" });
+      setSel(null);
+      await load();
+      toast.success(result.message || "Session deleted successfully.");
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
@@ -256,7 +263,10 @@ function ScheduleView() {
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
         footer={sel && <><button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
-          <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete Session</button>
+          {sel.status === "cancelled" &&
+            sel.cancelledByRole === "instructor" &&
+            String(sel.cancelledBy) === String(sel.instructor?.id) &&
+            <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete Session</button>}
           {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel Session</button>}</>}>
         {sel && (
           <div>
@@ -271,11 +281,20 @@ function ScheduleView() {
             <p className="meta-line">📍 {sel.room?.name}</p>
             <p className="meta-line">👥 {sel.acceptedCount}/{sel.minToRun} min · {sel.capacity} capacity</p>
             <p className="meta-line">Status: <span className={"status-tag " + sel.status}>{STATUS_LABEL[sel.status]}</span></p>
+            {sel.status === "cancelled" && <p className="meta-line">
+              Cancelled by: <strong>{sel.cancelledByRole === "instructor" &&
+                String(sel.cancelledBy) === String(sel.instructor?.id)
+                ? `${sel.instructor?.name || "Assigned Instructor"} (Instructor)`
+                : sel.cancelledByRole
+                  ? sel.cancelledByRole[0].toUpperCase() + sel.cancelledByRole.slice(1)
+                  : "Unknown / legacy record"}</strong>
+              {sel.cancelledAt ? ` · ${new Date(sel.cancelledAt).toLocaleString()}` : ""}
+            </p>}
             <div className="schedule-detail-head"><h4>Client bookings</h4>
               {["open", "confirmed", "rescheduled"].includes(sel.status) &&
                 <button className="btn sm" onClick={() => setAssign({ sessionId: sel.id, clientIds: selectedBookings.map((booking) => booking.client?.id).filter(Boolean), capacity: sel.capacity })}>Manage clients</button>}</div>
             <p className="meta-line"><strong>{selectedBookings.length}</strong> assigned · <strong>{Math.max(0, sel.capacity - selectedBookings.length)}</strong> remaining slots</p>
-            {selectedBookings.length === 0 ? <p className="meta-line">No client bookings.</p> :
+            {selectedBookings.length === 0 ? <p className="meta-line">No active client bookings.</p> :
               selectedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
                   <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status}</span></div>
@@ -287,6 +306,15 @@ function ScheduleView() {
                   </div>
                 </div>
               ))}
+            {historicalBookings.length > 0 && <>
+              <h4 className="schedule-history-title">Inactive booking history</h4>
+              {historicalBookings.map((booking) => (
+                <div className="schedule-booking history" key={booking.id}>
+                  <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status} booking record</span></div>
+                </div>
+              ))}
+              <p className="meta-line">Cancelled, declined, and completed records do not block Admin deletion. They are preserved in the deletion audit.</p>
+            </>}
           </div>
         )}
       </Modal>

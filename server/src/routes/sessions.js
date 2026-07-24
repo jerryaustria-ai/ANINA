@@ -11,12 +11,23 @@ import { asyncHandler, HttpError } from "../utils/http.js";
 import { assertScheduleBookable, assertScheduleDateNotPast } from "../services/scheduleTime.js";
 import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { Notification } from "../models/Notification.js";
+import { SessionAudit } from "../models/SessionAudit.js";
 
 const router = Router();
 router.use(requireAuth);
 
 const populate = (q) =>
   q.populate("instructor", "name email picture role").populate("room", "name color maxCapacity location");
+
+const ACTIVE_CLIENT_STATUSES = ["pending", "accepted", "approved", "confirmed", "booked", "waitlisted", "active"];
+
+function activeClientQuery(sessionId) {
+  return {
+    session: sessionId,
+    status: { $in: ACTIVE_CLIENT_STATUSES },
+    isDeleted: { $ne: true },
+  };
+}
 
 function ownsOrAdmin(req, session) {
   return req.user.role === "admin" || session.instructor._id?.toString() === req.user._id.toString() ||
@@ -272,31 +283,79 @@ router.post(
   })
 );
 
-// DELETE /api/sessions/:id — admin-only hard delete for unused schedules.
-// Schedules with booking history must be cancelled so historical records remain valid.
+// Admin-only, database-current deletion eligibility.
+router.get(
+  "/:id/deletion-eligibility",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const classSession = await ClassSession.findById(req.params.id);
+    if (!classSession) throw new HttpError(404, "Session not found");
+    const activeClientRecords = await Booking.countDocuments(activeClientQuery(classSession._id));
+    const wasCancelledByAssignedInstructor =
+      classSession.status === "cancelled" &&
+      classSession.cancelledByRole === "instructor" &&
+      classSession.cancelledBy?.toString() === classSession.instructor.toString();
+    res.json({
+      eligible: wasCancelledByAssignedInstructor && activeClientRecords === 0,
+      activeClientRecords,
+      wasCancelledByAssignedInstructor,
+      reason: !wasCancelledByAssignedInstructor
+        ? "The assigned Instructor must cancel this session before it can be deleted."
+        : activeClientRecords > 0
+          ? "This session cannot be deleted because it still has an active booking or pending spot request."
+          : null,
+      cancellation: classSession.status === "cancelled" ? {
+        cancelledBy: classSession.cancelledBy,
+        cancelledByRole: classSession.cancelledByRole,
+        cancelledAt: classSession.cancelledAt,
+        cancellationReason: classSession.cancellationReason,
+      } : null,
+    });
+  })
+);
+
+// DELETE /api/sessions/:id — admin-only hard delete when no active client
+// booking/request/assignment/waitlist remains. Inactive history is snapshotted.
 router.delete(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     const transaction = await mongoose.startSession();
-    let deleted = false;
+    let deleted = null;
     try {
       await transaction.withTransaction(async () => {
         const classSession = await ClassSession.findById(req.params.id).session(transaction);
         if (!classSession) throw new HttpError(404, "Session not found");
 
-        // Count every linked booking status, including cancelled and declined
-        // records, because they are still part of the client's history.
-        const bookingCount = await Booking.countDocuments({ session: classSession._id }).session(transaction);
-        if (bookingCount > 0) {
+        const wasCancelledByAssignedInstructor =
+          classSession.status === "cancelled" &&
+          classSession.cancelledByRole === "instructor" &&
+          classSession.cancelledBy?.toString() === classSession.instructor.toString();
+        if (!wasCancelledByAssignedInstructor) {
+          throw new HttpError(409, "This session cannot be deleted until the assigned Instructor cancels it.");
+        }
+
+        const activeClientRecords = await Booking.countDocuments(activeClientQuery(classSession._id)).session(transaction);
+        if (activeClientRecords > 0) {
           throw new HttpError(
             409,
-            "This session cannot be deleted because it has existing bookings or spot requests. Please cancel the session instead."
+            "This session cannot be deleted because it still has an active booking or pending spot request."
           );
         }
 
-        // Only notification records can safely be removed with a session that
-        // has never held client history. Instructors/users/rooms are untouched.
+        const bookingSnapshots = await Booking.find({ session: classSession._id }).lean().session(transaction);
+        await SessionAudit.create([{
+          sessionId: classSession._id,
+          action: "PERMANENTLY_DELETED",
+          performedBy: req.user._id,
+          performedByRole: req.user.role,
+          sessionSnapshot: classSession.toObject({ depopulate: true }),
+          bookingSnapshots,
+        }], { session: transaction });
+
+        // Inactive linked bookings are preserved in the audit snapshot, then
+        // removed to avoid orphan references. Users/instructors/rooms remain.
+        await Booking.deleteMany({ session: classSession._id }).session(transaction);
         await Notification.deleteMany({ relatedScheduleId: classSession._id }).session(transaction);
         await ClassSession.deleteOne({ _id: classSession._id }).session(transaction);
         deleted = true;
@@ -305,7 +364,10 @@ router.delete(
       await transaction.endSession();
     }
     if (!deleted) throw new HttpError(409, "Session could not be deleted");
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      message: "Session deleted successfully.",
+    });
   })
 );
 
@@ -317,12 +379,19 @@ router.post(
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    if (session.status === "cancelled") {
+      throw new HttpError(409, "This session has already been cancelled.");
+    }
     const affectedBookings = await Booking.find({
       session: session._id,
       status: { $in: ["pending", "accepted", "waitlisted"] },
     }).populate("client");
     const affectedClients = affectedBookings.map((booking) => booking.client).filter(Boolean);
     session.status = "cancelled";
+    session.cancelledBy = req.user._id;
+    session.cancelledByRole = req.user.role;
+    session.cancelledAt = new Date();
+    session.cancellationReason = String(req.body?.reason || "").trim();
     await session.save();
     await Booking.updateMany(
       { session: session._id, status: { $in: ["pending", "accepted", "waitlisted"] } },

@@ -149,6 +149,8 @@ a { color:var(--sage-deep); }
 .schedule-booking > div:first-child { display:flex; flex-direction:column; font-size:0.86rem; }
 .schedule-booking > div:first-child span { color:var(--ink-mute); text-transform:capitalize; }
 .schedule-booking-actions { display:flex; gap:0.4rem; }
+.schedule-history-title { margin:1rem 0 0.35rem; font-size:0.82rem; color:#8a3b30; }
+.schedule-booking.history { opacity:0.72; }
 .client-multiselect { border:1px solid var(--line); border-radius:8px; padding:0.65rem; }
 .client-multiselect > input { width:100%; padding:0.5rem 0.65rem; border:1px solid var(--line); border-radius:6px; }
 .client-chips { display:flex; flex-wrap:wrap; gap:0.35rem; min-height:1.8rem; margin-bottom:0.45rem; }

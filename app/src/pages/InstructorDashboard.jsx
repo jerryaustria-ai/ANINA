@@ -160,7 +160,7 @@ export default function InstructorDashboard() {
         onClose={() => setManage(null)}
         title={s?.title}
         footer={s && <>
-          <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>
+          {s.status !== "cancelled" && <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>}
           {s.status !== "confirmed" &&
             <button className="btn clay" onClick={() => sessionAction("confirm")} disabled={busy || !metMin}
               title={metMin ? "" : `Need ${s.minToRun} accepted`}>Confirm class</button>}
