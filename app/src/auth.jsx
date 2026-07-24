@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, setToken, getToken } from "./api.js";
+import { toast } from "react-toastify";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -17,6 +18,7 @@ export function AuthProvider({ children }) {
         setUser(user);
       } catch {
         setToken(null);
+        toast.error("Your session expired. Please sign in again.");
       } finally {
         setLoading(false);
       }

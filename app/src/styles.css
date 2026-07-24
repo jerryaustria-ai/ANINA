@@ -51,10 +51,8 @@ a { color:var(--sage-deep); }
 .chip-filter button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
 .swatch { width:10px; height:10px; border-radius:50%; display:inline-block; }
 
-.banner { padding:0.7rem 1rem; border-radius:var(--radius); margin-bottom:1rem; font-size:0.9rem; }
-.banner.warn { background:#fbf3e6; border:1px solid #e8d5a8; color:#7a5a1a; }
-.banner.ok { background:#eef3ea; border:1px solid #cfe0c2; color:var(--sage-deep); }
-.banner.err { background:#fbecea; border:1px solid #e8c3bd; color:#8a3b30; }
+.status-notice,.auth-note { padding:0.7rem 1rem; border-radius:var(--radius); margin-bottom:1rem; font-size:0.9rem; }
+.status-notice.warning,.auth-note { background:#fbf3e6; border:1px solid #e8d5a8; color:#7a5a1a; }
 
 /* ---------- WeekView calendar ---------- */
 .wv { background:var(--white); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }

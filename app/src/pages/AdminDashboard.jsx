@@ -5,6 +5,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { fmtRange, fmtMoney, fmtInterval, STATUS_LABEL, toLocalInput } from "../util.js";
+import { toast } from "react-toastify";
 
 export default function AdminDashboard({ view }) {
   if (view === "rooms") return <RoomsView />;
@@ -63,7 +64,6 @@ function ScheduleView() {
   const [edit, setEdit] = useState(null);
   const [assign, setAssign] = useState(null);
   const [reschedule, setReschedule] = useState(null);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -77,11 +77,11 @@ function ScheduleView() {
     setBookings(bookingData.bookings);
     if (sel) setSel(sessionData.sessions.find((session) => session.id === sel.id) || null);
   }
-  useEffect(() => { load().catch((e) => setMsg({ kind: "err", text: e.message })); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useEffect(() => {
     Promise.all([api("/rooms"), api("/users")])
       .then(([roomData, userData]) => { setRooms(roomData.rooms); setUsers(userData.users); })
-      .catch((e) => setMsg({ kind: "err", text: e.message }));
+      .catch((e) => toast.error(e.message));
   }, []);
 
   const clients = users.filter((user) => user.role === "client" && user.active);
@@ -119,7 +119,7 @@ function ScheduleView() {
   }
 
   async function saveSchedule() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     let createdId = null;
     try {
       const today = toLocalInput(new Date()).slice(0, 10);
@@ -137,71 +137,72 @@ function ScheduleView() {
       if (edit.id) {
         await api(`/sessions/${edit.id}`, { method: "PATCH", body });
         await api(`/sessions/${edit.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
-        setMsg({ kind: "ok", text: `Schedule updated with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.` });
+        toast.success(`Schedule updated with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
       } else {
         const { session } = await api("/sessions", { method: "POST", body });
         createdId = session.id;
         await api(`/sessions/${session.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
         await api(`/sessions/${session.id}`, { method: "PATCH", body: { status: "open" } });
-        setMsg({ kind: "ok", text: `Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.` });
+        toast.success(`Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
       }
       setEdit(null); await load();
     } catch (e) {
       if (createdId) {
         try { await api(`/sessions/${createdId}`, { method: "DELETE" }); } catch { /* retain it if booking writes unexpectedly succeeded */ }
       }
-      setMsg({ kind: "err", text: e.message });
+      if (e.status === 409) toast.warning(e.message);
+      else toast.error(e.message);
     }
     finally { setBusy(false); }
   }
 
   async function assignClients() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const result = await api(`/sessions/${assign.sessionId}/clients`, { method: "PUT", body: { clientIds: assign.clientIds } });
       setAssign(null); await load();
-      setMsg({ kind: "ok", text: `${result.assignedCount} client assignment${result.assignedCount === 1 ? "" : "s"} saved.` });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success(`${result.assignedCount} client assignment${result.assignedCount === 1 ? "" : "s"} saved.`);
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function cancelBooking(booking) {
     if (!window.confirm(`Cancel ${booking.client?.name}'s booking for ${booking.session?.title}?`)) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/bookings/${booking.id}/cancel`, { method: "POST" });
-      await load(); setMsg({ kind: "ok", text: "Booking cancelled." });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      await load(); toast.success("Booking cancelled.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function moveBooking() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/bookings/${reschedule.booking.id}`, { method: "PATCH", body: { sessionId: reschedule.sessionId } });
       setReschedule(null); await load();
-      setMsg({ kind: "ok", text: "Booking rescheduled." });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success("Booking rescheduled.");
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function cancelSchedule(session) {
     if (!window.confirm(`Cancel "${session.title}"? Active client bookings will also be cancelled.`)) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/sessions/${session.id}/cancel`, { method: "POST" });
-      setSel(null); await load(); setMsg({ kind: "ok", text: "Schedule and active bookings cancelled." });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      setSel(null); await load(); toast.success("Schedule and active bookings cancelled.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function deleteSchedule(session) {
     if (!window.confirm(`Permanently delete "${session.title}"? This is allowed only when it has no booking history.`)) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/sessions/${session.id}`, { method: "DELETE" });
-      setSel(null); await load(); setMsg({ kind: "ok", text: "Unused schedule permanently deleted." });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      setSel(null); await load(); toast.success("Unused schedule permanently deleted.");
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -218,7 +219,6 @@ function ScheduleView() {
     <div className="page">
       <div className="page-head"><div><h1>Studio schedule</h1><p>Manage all client and instructor schedules.</p></div>
         <button className="btn" onClick={newSchedule}>+ Create schedule</button></div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       <div className="toolbar-row">
         <div className="chip-filter">
@@ -326,20 +326,20 @@ const blankRoom = { name: "", maxCapacity: 10, location: "", color: "#8a9a5b", a
 function RoomsView() {
   const [rooms, setRooms] = useState([]);
   const [edit, setEdit] = useState(null);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = () => api("/rooms?all=1").then(({ rooms }) => setRooms(rooms));
   useEffect(() => { load(); }, []);
 
   async function save() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const body = { name: edit.name, maxCapacity: Number(edit.maxCapacity), location: edit.location, color: edit.color, active: edit.active };
       if (edit.id) await api(`/rooms/${edit.id}`, { method: "PATCH", body });
       else await api("/rooms", { method: "POST", body });
-      setEdit(null); await load();
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      const wasEdit = !!edit.id;
+      setEdit(null); await load(); toast.success(wasEdit ? "Room updated." : "Room created.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -347,7 +347,6 @@ function RoomsView() {
     <div className="page">
       <div className="page-head"><div><h1>Rooms</h1><p>Set each room's max capacity — classes can't exceed it.</p></div>
         <button className="btn" onClick={() => setEdit({ ...blankRoom })}>+ Add room</button></div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       <div className="grid-cards">
         {rooms.map((r) => (
@@ -412,7 +411,6 @@ function resizeProfilePicture(file) {
 
 function PeopleView() {
   const [users, setUsers] = useState([]);
-  const [msg, setMsg] = useState(null);
   const [add, setAdd] = useState(null);
   const [editUser, setEditUser] = useState(null);
   const [deleteReview, setDeleteReview] = useState(null);
@@ -422,20 +420,17 @@ function PeopleView() {
   useEffect(() => { load(); }, []);
 
   async function setRole(id, role) {
-    setMsg(null);
-    try { await api(`/users/${id}/role`, { method: "PATCH", body: { role } }); await load(); setMsg({ kind: "ok", text: "Role updated." }); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    try { await api(`/users/${id}/role`, { method: "PATCH", body: { role } }); await load(); toast.success("User role updated."); }
+    catch (e) { toast.error(e.message); }
   }
 
   async function setActive(u, active) {
-    setMsg(null);
     try { await api(`/users/${u.id}/active`, { method: "PATCH", body: { active } }); await load();
-      setMsg({ kind: "ok", text: `${u.name} ${active ? "reactivated" : "deactivated"}.` }); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+      active ? toast.success(`${u.name} reactivated.`) : toast.info(`${u.name} was deactivated.`); }
+    catch (e) { toast.error(e.message); }
   }
 
   async function removeUser(u) {
-    setMsg(null);
     try {
       const dependencies = await api(`/users/${u.id}/dependencies`);
       if (dependencies.hasDependencies) {
@@ -446,9 +441,9 @@ function PeopleView() {
       if (!window.confirm(`Permanently delete ${u.name} (${u.email})? This cannot be undone.`)) return;
       await api(`/users/${u.id}`, { method: "DELETE" });
       await load();
-      setMsg({ kind: "ok", text: `${u.name} permanently deleted.` });
+      toast.success(`${u.name} permanently deleted.`);
     }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
   }
 
   async function refreshDeleteReview() {
@@ -459,41 +454,41 @@ function PeopleView() {
 
   async function cancelDependencyBooking(booking) {
     if (!window.confirm(`Cancel ${booking.client?.name || "this client's"} booking for ${booking.session?.title}?`)) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/bookings/${booking.id}/cancel`, { method: "POST" });
       await refreshDeleteReview();
       setDependencyDetail(null);
-      setMsg({ kind: "ok", text: "Booking cancelled. Historical records were retained." });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success("Booking cancelled. Historical records were retained.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function deactivateReviewedUser() {
     const user = deleteReview.user;
     if (!window.confirm(`Deactivate ${user.name}? They will no longer be able to log in. Existing classes and bookings will be retained.`)) return;
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/users/${user.id}/active`, { method: "PATCH", body: { active: false } });
       setDeleteReview(null); setDependencyDetail(null);
       await load();
-      setMsg({ kind: "ok", text: `${user.name} deactivated. All historical records were retained.` });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.info(`${user.name} was deactivated. All historical records were retained.`);
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function createUser() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const { user } = await api("/users", { method: "POST", body: add });
       setAdd(null); await load();
-      setMsg({ kind: "ok", text: `Added ${user.name} (${user.role}). They can sign in with email/password or Google.` });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success(`Added ${user.name} (${user.role}).`);
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function updateUser() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const body = { ...editUser };
       if (!body.password) delete body.password;
@@ -501,8 +496,8 @@ function PeopleView() {
       delete body.specialtiesText;
       const { user } = await api(`/users/${editUser.id}`, { method: "PATCH", body });
       setEditUser(null); await load();
-      setMsg({ kind: "ok", text: `Updated ${user.name}.` });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success(`Updated ${user.name}.`);
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -512,7 +507,6 @@ function PeopleView() {
         <div><h1>People</h1><p>Add users, promote clients to instructors, or manage admins.</p></div>
         <button className="btn" onClick={() => setAdd({ ...blankUser })}>+ Add user</button>
       </div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
       <ul className="roster">
         {users.map((u) => (
           <li key={u.id} style={{ opacity: u.active ? 1 : 0.5 }}>
@@ -560,7 +554,7 @@ function PeopleView() {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       try { setAdd({ ...add, picture: await resizeProfilePicture(file) }); }
-                      catch (error) { setMsg({ kind: "err", text: error.message }); }
+                      catch (error) { toast.error(error.message); }
                     }} />
                   </label>
                   {add.picture && <button type="button" className="picture-remove" onClick={() => setAdd({ ...add, picture: "" })}>Remove</button>}
@@ -591,7 +585,7 @@ function PeopleView() {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     try { setEditUser({ ...editUser, picture: await resizeProfilePicture(file) }); }
-                    catch (error) { setMsg({ kind: "err", text: error.message }); }
+                    catch (error) { toast.error(error.message); }
                   }} />
                 </label>
                 {editUser.picture && <button type="button" className="picture-remove" onClick={() => setEditUser({ ...editUser, picture: "" })}>Remove</button>}
@@ -629,7 +623,7 @@ function PeopleView() {
           <button className="btn danger" onClick={deactivateReviewedUser} disabled={busy || !deleteReview?.user?.active}>Deactivate User</button></>}>
         {deleteReview && (
           <div>
-            <div className="banner warn">This user has existing classes or bookings and cannot be deleted. Please deactivate the user instead.</div>
+            <div className="status-notice warning">This user has existing classes or bookings and cannot be deleted. Please deactivate the user instead.</div>
             <div className="dependency-user">
               <Avatar src={deleteReview.user.picture} name={deleteReview.user.name} size={42} />
               <div><strong>{deleteReview.user.name}</strong><div className="meta-line">{deleteReview.user.email} · {deleteReview.user.role}</div></div>
@@ -689,7 +683,6 @@ const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", i
 function TiersView() {
   const [tiers, setTiers] = useState([]);
   const [edit, setEdit] = useState(null);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = () => api("/tiers?all=1").then(({ tiers }) => setTiers(tiers));
   useEffect(() => { load(); }, []);
@@ -698,14 +691,15 @@ function TiersView() {
     setEdit(t ? { ...t, benefits: (t.benefits || []).join("\n") } : { ...blankTier });
   }
   async function save() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const body = { ...edit, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean) };
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
       else await api("/tiers", { method: "POST", body });
-      setEdit(null); await load();
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+      const wasEdit = !!edit.id;
+      setEdit(null); await load(); toast.success(wasEdit ? "Membership tier updated." : "Membership tier created.");
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -715,7 +709,6 @@ function TiersView() {
         <div><h1>Membership tiers</h1><p>Plans clients can subscribe to. Amounts bill via Xendit on the interval you set.</p></div>
         <button className="btn" onClick={() => openEdit(null)}>+ Add tier</button>
       </div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       {tiers.length === 0 ? <div className="empty">No tiers yet. Add one to let clients subscribe.</div> : (
         <div className="grid-cards">
@@ -758,21 +751,19 @@ function TiersView() {
 /* ---------- Memberships monitor ---------- */
 function MembershipsView() {
   const [list, setList] = useState([]);
-  const [msg, setMsg] = useState(null);
   const load = () => api("/memberships").then(({ memberships }) => setList(memberships));
   useEffect(() => { load(); }, []);
 
   async function cancel(m) {
     if (!window.confirm(`Cancel ${m.client?.name}'s membership?`)) return;
-    try { await api(`/memberships/${m.id}/cancel`, { method: "POST" }); await load(); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    try { await api(`/memberships/${m.id}/cancel`, { method: "POST" }); await load(); toast.success("Membership cancelled."); }
+    catch (e) { toast.error(e.message); }
   }
   const tag = (s) => s === "active" ? "accepted" : s === "past_due" ? "cancelled" : s === "cancelled" || s === "inactive" ? "declined" : "pending";
 
   return (
     <div className="page">
       <div className="page-head"><div><h1>Memberships</h1><p>Every client subscription and its billing status.</p></div></div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
       {list.length === 0 ? <div className="empty">No memberships yet.</div> : (
         <ul className="roster">
           {list.map((m) => (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { fmtMoney, fmtInterval } from "../util.js";
+import { toast } from "react-toastify";
 
 const STATUS_TEXT = {
   active: "Active", pending: "Awaiting payment", past_due: "Payment failed", cancelled: "Cancelled", inactive: "Inactive",
@@ -10,7 +11,6 @@ export default function ClientMembership() {
   const [membership, setMembership] = useState(null);
   const [tiers, setTiers] = useState([]);
   const [live, setLive] = useState(false);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -18,53 +18,54 @@ export default function ClientMembership() {
       api("/memberships/mine"), api("/tiers"),
     ]);
     setMembership(membership);
+    if (membership?.status === "past_due") {
+      toast.error("Your last payment failed — please update your payment method.", { toastId: "membership-past-due" });
+    }
     setLive(live);
     setTiers(tiers);
   }
   useEffect(() => {
-    load().catch((e) => setMsg({ kind: "err", text: e.message }));
+    load().catch((e) => toast.error(e.message));
     const p = new URLSearchParams(window.location.search).get("status");
-    if (p === "success") setMsg({ kind: "ok", text: "Thanks! We're confirming your payment — your membership activates shortly." });
-    if (p === "cancelled") setMsg({ kind: "warn", text: "Checkout cancelled. You can subscribe again anytime." });
+    if (p === "success") toast.success("Thanks! We're confirming your payment — your membership activates shortly.", { toastId: "membership-return-success" });
+    if (p === "cancelled") toast.warning("Checkout cancelled. You can subscribe again anytime.", { toastId: "membership-return-cancelled" });
   }, []);
 
   const activeish = membership && ["active", "pending", "past_due"].includes(membership.status);
 
   async function subscribe(tierId) {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const res = await api("/memberships/subscribe", { method: "POST", body: { tierId } });
       await load();
-      setMsg({
-        kind: "ok",
-        text: res.checkoutUrl
+      toast.success(
+        res.checkoutUrl
           ? "Subscription started. Open the secure checkout below; it will stay separate from this page."
-          : "Subscription started. Complete payment below to activate.",
-      });
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+          : "Subscription started. Complete payment below to activate."
+      );
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function simulatePay() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try { await api(`/memberships/${membership.id}/simulate`, { method: "POST", body: { event: "activated" } }); await load();
-      setMsg({ kind: "ok", text: "Payment simulated — membership active. You can now book classes." }); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+      toast.success("Payment simulated — membership active. You can now book classes."); }
+    catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   async function cancel() {
     if (!window.confirm("Cancel your membership? You'll lose booking access.")) return;
-    setBusy(true); setMsg(null);
-    try { await api(`/memberships/${membership.id}/cancel`, { method: "POST" }); await load(); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    setBusy(true);
+    try { await api(`/memberships/${membership.id}/cancel`, { method: "POST" }); await load(); toast.success("Membership cancelled."); }
+    catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
   return (
     <div className="page">
       <div className="page-head"><div><h1>Membership</h1><p>An active membership unlocks class booking.</p></div></div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       {activeish && (
         <div className="card" style={{ marginBottom: "1.4rem", borderLeft: "4px solid var(--sage)" }}>
@@ -78,7 +79,6 @@ export default function ClientMembership() {
           {membership.status === "active" && membership.currentPeriodEnd && (
             <div className="sub">Renews {new Date(membership.currentPeriodEnd).toLocaleDateString()}</div>
           )}
-          {membership.status === "past_due" && <div className="banner err" style={{ marginTop: "0.7rem" }}>Your last payment failed — please update your payment method.</div>}
 
           <div style={{ marginTop: "0.9rem", display: "flex", gap: "0.6rem" }}>
             {membership.status === "pending" && membership.simulated &&

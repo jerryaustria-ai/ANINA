@@ -5,6 +5,7 @@ import ClientDashboard from "./pages/ClientDashboard.jsx";
 import ClientMembership from "./pages/ClientMembership.jsx";
 import InstructorDashboard from "./pages/InstructorDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import { toast } from "react-toastify";
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -31,7 +32,7 @@ function Nav() {
         <span>{user.name}</span>
         <span className={"role-pill " + user.role}>{user.role}</span>
       </div>
-      <button className="btn ghost sm" onClick={() => { logout(); nav("/"); }}>Sign out</button>
+      <button className="btn ghost sm" onClick={() => { logout(); nav("/"); toast.info("You have been signed out."); }}>Sign out</button>
     </nav>
   );
 }

@@ -5,6 +5,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { fmtRange, toLocalInput, dateAtHour, STATUS_LABEL } from "../util.js";
+import { toast } from "react-toastify";
 
 const blankForm = { title: "", type: "group", room: "", startAt: "", endAt: "", capacity: 8, minToRun: 3 };
 
@@ -12,7 +13,6 @@ export default function InstructorDashboard() {
   const cal = useCalendar();
   const [sessions, setSessions] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const [form, setForm] = useState(null); // create/edit modal
@@ -24,7 +24,7 @@ export default function InstructorDashboard() {
     const { sessions } = await api(`/sessions?mine=1&from=${from}&to=${to}`);
     setSessions(sessions);
   }
-  useEffect(() => { load().catch((e) => setMsg({ kind: "err", text: e.message })); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)).catch(() => {}); }, []);
 
   const events = sessions.map((s) => ({
@@ -41,7 +41,7 @@ export default function InstructorDashboard() {
   }
 
   async function saveForm() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       const today = toLocalInput(new Date()).slice(0, 10);
       if (form.startAt.slice(0, 10) < today) {
@@ -54,9 +54,9 @@ export default function InstructorDashboard() {
       };
       const { session } = await api("/sessions", { method: "POST", body });
       await api(`/sessions/${session.id}/publish`, { method: "POST" }); // publish immediately so clients can book
-      setMsg({ kind: "ok", text: `Class "${session.title}" created & published.` });
+      toast.success(`Class "${session.title}" created and published.`);
       setForm(null); await load();
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -72,15 +72,16 @@ export default function InstructorDashboard() {
     await load();
   }
   async function decide(bookingId, action) {
-    setBusy(true); setMsg(null);
-    try { await api(`/bookings/${bookingId}/${action}`, { method: "POST" }); await refreshManage(); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    setBusy(true);
+    const resultLabel = { accept: "accepted", decline: "declined", waitlist: "waitlisted" }[action] || "updated";
+    try { await api(`/bookings/${bookingId}/${action}`, { method: "POST" }); await refreshManage(); toast.success(`Booking ${resultLabel}.`); }
+    catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
   async function sessionAction(action) {
-    setBusy(true); setMsg(null);
-    try { await api(`/sessions/${manage.session.id}/${action}`, { method: "POST" }); await refreshManage(); }
-    catch (e) { setMsg({ kind: "err", text: e.message }); }
+    setBusy(true);
+    try { await api(`/sessions/${manage.session.id}/${action}`, { method: "POST" }); await refreshManage(); toast.success(`Class ${action === "cancel" ? "cancelled" : "confirmed"}.`); }
+    catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -93,7 +94,6 @@ export default function InstructorDashboard() {
         <div><h1>My classes</h1><p>Drag on the calendar to add a class · tap a class to manage bookings.</p></div>
         <button className="btn" onClick={() => openCreate(null)}>+ New class</button>
       </div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       <CalendarView
         cal={cal}
@@ -161,7 +161,7 @@ export default function InstructorDashboard() {
               {s.acceptedCount}/{s.capacity} seats
               <span className={"status-tag " + s.status}>{STATUS_LABEL[s.status]}</span>
             </div>
-            {metMin && s.status !== "confirmed" && <div className="banner ok">Enough people to run — you can confirm this class.</div>}
+            {metMin && s.status !== "confirmed" && <p className="meta-line">Enough people to run — you can confirm this class.</p>}
 
             <h4 style={{ fontFamily: "var(--sans)", marginTop: "1rem", color: "var(--ink-mute)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bookings</h4>
             {manage.bookings.length === 0 ? <div className="empty">No bookings yet.</div> : (

@@ -6,6 +6,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { fmtRange, STATUS_LABEL } from "../util.js";
+import { toast } from "react-toastify";
 
 export default function ClientDashboard() {
   const cal = useCalendar();
@@ -13,7 +14,6 @@ export default function ClientDashboard() {
   const [mine, setMine] = useState([]); // my bookings
   const [membership, setMembership] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -28,7 +28,7 @@ export default function ClientDashboard() {
     setMine(bookings);
     setMembership(mem.membership);
   }
-  useEffect(() => { load().catch((e) => setMsg({ kind: "err", text: e.message })); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
 
   const canBook = !!membership?.activeNow;
 
@@ -55,21 +55,21 @@ export default function ClientDashboard() {
   const selActive = selBooking && !["cancelled", "declined"].includes(selBooking.status);
 
   async function book() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api("/bookings", { method: "POST", body: { sessionId: sel.id } });
-      setMsg({ kind: "ok", text: `Requested a spot in "${sel.title}". Your instructor will confirm.` });
+      toast.success(`Requested a spot in "${sel.title}". Your instructor will confirm.`);
       setSelected(null); await load();
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
   async function cancel() {
-    setBusy(true); setMsg(null);
+    setBusy(true);
     try {
       await api(`/bookings/${selBooking.id}/cancel`, { method: "POST" });
-      setMsg({ kind: "ok", text: "Booking cancelled." });
+      toast.success("Booking cancelled.");
       setSelected(null); await load();
-    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -82,9 +82,8 @@ export default function ClientDashboard() {
       <div className="page-head">
         <div><h1>Book a class</h1><p>Tap any class on the calendar to request a spot.</p></div>
       </div>
-      {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
       {!canBook && (
-        <div className="banner warn">
+        <div className="status-notice warning">
           You need an active membership to book classes. <Link to="/membership">View membership plans →</Link>
         </div>
       )}
@@ -107,7 +106,9 @@ export default function ClientDashboard() {
               <div className="sub">{b.session.instructor?.name} · {b.session.room?.name}</div>
               <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status]}</span>
-                <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" }).then(load)}>Cancel</button>
+                <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" })
+                  .then(() => { toast.success("Booking cancelled."); return load(); })
+                  .catch((e) => toast.error(e.message))}>Cancel</button>
               </div>
             </div>
           ))}
@@ -140,7 +141,7 @@ export default function ClientDashboard() {
             <p className="meta-line">🗓 {fmtRange(sel.startAt, sel.endAt)}</p>
             <p className="meta-line">📍 {sel.room?.name} · {sel.type === "private" ? "Private session" : "Group class"}</p>
             <p className="meta-line">👥 {sel.acceptedCount}/{sel.capacity} booked · {sel.seatsLeft} spot{sel.seatsLeft === 1 ? "" : "s"} left</p>
-            {selActive && <div className="banner ok" style={{ marginTop: "0.8rem" }}>You're {STATUS_LABEL[selBooking.status].toLowerCase()} for this class.</div>}
+            {selActive && <p className="meta-line">You're {STATUS_LABEL[selBooking.status].toLowerCase()} for this class.</p>}
           </div>
         )}
       </Modal>
