@@ -399,3 +399,103 @@ a { color:var(--sage-deep); }
 
 .empty { text-align:center; color:var(--ink-mute); padding:2rem; font-style:italic; }
 .spinner { text-align:center; padding:3rem; color:var(--ink-mute); }
+
+/* ---------- Public schedule — editorial calendar treatment ---------- */
+.public-schedule-page { background:#fdfcf9; padding-bottom:88px; }
+.public-schedule-nav { min-height:78px; padding:.7rem clamp(1.5rem,3vw,3.4rem); background:#fff; color:var(--ink);
+  border-bottom:1px solid #eee9e2; display:grid; grid-template-columns:210px 1fr auto; }
+.public-schedule-brand img { display:block; width:150px; height:52px; object-fit:contain; }
+.public-schedule-nav nav { display:flex; justify-content:center; align-items:center; gap:clamp(1rem,2.6vw,2.8rem); }
+.public-schedule-nav nav a,.public-schedule-auth a { color:#2f2a25; text-transform:uppercase; letter-spacing:.02em; font-size:.76rem; text-decoration:none; }
+.public-schedule-nav nav a.active { border-bottom:1px solid var(--clay); padding-bottom:.55rem; }
+.public-schedule-auth { display:flex; align-items:center; gap:.8rem; }
+.public-schedule-auth>a:first-child { min-width:100px; padding:.58rem 1rem; border:1px solid #665b50; border-radius:7px; text-align:center; }
+.public-schedule-auth .public-schedule-account { min-width:112px; padding:.62rem 1rem; border:0; border-radius:7px; text-align:center;
+  background:linear-gradient(135deg,#655849,#3e352c); color:#fff; }
+.public-schedule-hero { height:150px; position:relative; overflow:hidden; display:grid; place-items:center; text-align:center;
+  background:radial-gradient(circle at 14% 20%,rgba(214,188,159,.15) 0 16%,transparent 16.5%),
+    radial-gradient(circle at 82% 42%,rgba(214,188,159,.12) 0 17%,transparent 17.5%),
+    linear-gradient(100deg,#fbf5ee,#fffaf6 52%,#fbf5ee); }
+.public-schedule-hero h1 { font-size:clamp(2.5rem,4.2vw,4rem); letter-spacing:.01em; }
+.public-schedule-hero p { margin:.35rem 0 0; color:var(--ink-soft); }
+.botanical { position:absolute; width:185px; height:120px; font-size:0; opacity:.32; }
+.botanical::before,.botanical::after { content:""; position:absolute; width:150px; height:1px; background:#b58c66; transform:rotate(-28deg); top:62px; left:8px; }
+.botanical::after { width:28px; height:52px; top:20px; left:52px; border:1px solid #b58c66; border-radius:100% 0 100% 0;
+  background:transparent; box-shadow:34px 17px 0 -1px #fffaf6,34px 17px 0 0 #b58c66,68px 35px 0 -1px #fffaf6,68px 35px 0 0 #b58c66; }
+.botanical-left { left:-15px; bottom:-15px; }
+.botanical-right { right:-12px; top:-5px; transform:scaleX(-1) rotate(-12deg); }
+.public-schedule-main { max-width:1420px; padding:1.2rem clamp(1rem,4vw,4rem) 3rem; }
+.public-schedule-toolbar { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:1rem; }
+.public-week-controls { display:grid; grid-template-columns:42px auto 42px; gap:1.3rem; }
+.public-week-controls button,.public-filter-button { height:38px; border:1px solid #e3ddd5; background:#fff; border-radius:7px; color:var(--ink); }
+.public-week-controls strong { display:flex; align-items:center; gap:.7rem; min-width:125px; font-family:var(--sans); font-size:.9rem; }
+.public-week-controls strong span { font-size:.8rem; }
+.public-filter-wrap { position:relative; }
+.public-filter-button { padding:0 1.25rem; display:flex; align-items:center; gap:.55rem; }
+.public-filter-menu { position:absolute; right:0; top:44px; z-index:15; width:190px; background:#fff; border:1px solid var(--line);
+  border-radius:8px; padding:.45rem; box-shadow:0 12px 35px rgba(55,44,34,.14); }
+.public-filter-menu label { display:flex; gap:.6rem; align-items:center; padding:.55rem; font-size:.78rem; cursor:pointer; }
+.public-week-wrap { border:0; overflow-x:auto; background:transparent; }
+.public-week-grid { min-width:1120px; gap:4px; }
+.public-day { border:0; display:grid; grid-template-rows:78px 1fr; gap:12px; }
+.public-day>header { height:78px; border:1px solid #ebe6df; background:#fff; }
+.public-day>header span { color:var(--ink-soft); font-size:.8rem; letter-spacing:0; text-transform:none; }
+.public-day>header strong { font-family:var(--sans); font-size:1rem; margin-top:.35rem; }
+.public-day>header em { display:none; }
+.public-day.today>header { background:#fff; color:var(--ink); }
+.public-day.today>header span { color:var(--ink-soft); }
+.public-day.today>header strong { display:grid; place-items:center; width:38px; height:38px; margin:.2rem auto 0; border-radius:50%; background:#efe2d5; }
+.public-day-events { min-height:490px; display:flex; flex-direction:column; gap:4px; }
+.public-session-card { min-height:190px; padding:.85rem .8rem .75rem; border:1px solid #ebe6df; border-radius:6px;
+  background:linear-gradient(145deg,#fffdfa,#fbf6f0); display:flex; flex-direction:column; }
+.public-session-time { margin:0 0 .45rem; color:var(--ink-soft); font-size:.67rem; font-weight:400; }
+.public-session-title { min-height:2.7em; padding:0; border:0; background:transparent; color:var(--ink); text-align:left;
+  font-family:var(--sans); font-size:.82rem; font-weight:600; line-height:1.35; }
+.public-session-title:hover { color:var(--clay); }
+.public-session-card>p { margin:.28rem 0 0; color:var(--ink-soft); font-size:.7rem; }
+.public-session-card .public-duration { margin-top:.42rem; }
+.public-spots { color:#365845!important; }
+.public-spots.full { color:#b24c3f!important; }
+.public-availability { position:absolute; top:.75rem; right:.7rem; padding:.15rem .4rem; font-size:.52rem; opacity:.9; }
+.public-book { margin-top:auto; padding:.42rem; border-color:#e7ddd2; background:linear-gradient(90deg,#f2e9df,#f8f2ea); color:var(--ink); font-size:.7rem; }
+.public-book:hover { background:linear-gradient(135deg,#655849,#3e352c); border-color:#4d4238; color:#fff; }
+.public-book:disabled { background:#eeeae5; }
+.public-no-events { margin:1.4rem .5rem; }
+.public-week-empty { background:#fff; border:1px solid #ebe6df; margin-top:8px; }
+.public-login-prompt { position:fixed; z-index:30; bottom:18px; left:50%; transform:translateX(-50%); width:min(900px,calc(100% - 2rem));
+  min-height:54px; padding:.8rem 1.5rem; display:flex; align-items:center; justify-content:center; gap:1rem; flex-wrap:wrap;
+  background:#f7eee5; border:1px solid #eadfd4; border-radius:9px; box-shadow:0 10px 30px rgba(64,51,40,.09); font-size:.74rem; }
+.public-login-prompt>span:first-child { font-size:1rem; }
+.public-login-prompt a { color:#4c4036; }
+.public-login-prompt i { width:1px; height:18px; background:#8c8178; }
+
+@media (max-width:1000px) {
+  .public-schedule-nav { grid-template-columns:1fr auto; }
+  .public-schedule-nav nav { display:none; }
+}
+@media (max-width:640px) {
+  .public-schedule-page { padding-bottom:132px; }
+  .public-schedule-nav { min-height:66px; padding:.45rem 1rem; }
+  .public-schedule-brand img { width:118px; height:44px; }
+  .public-schedule-auth>a:first-child { display:none; }
+  .public-schedule-auth .public-schedule-account { min-width:90px; padding:.55rem .7rem; }
+  .public-schedule-hero { height:132px; }
+  .public-schedule-hero h1 { font-size:2.5rem; }
+  .botanical { width:110px; opacity:.2; }
+  .public-schedule-toolbar { align-items:stretch; flex-direction:column; padding:.4rem 0 .8rem; }
+  .public-week-controls { width:100%; grid-template-columns:38px 1fr 38px; gap:.5rem; }
+  .public-week-controls strong { justify-content:center; }
+  .public-filter-button { width:100%; justify-content:center; }
+  .public-filter-wrap { width:100%; }
+  .public-filter-menu { left:0; right:0; width:100%; }
+  .public-week-wrap { overflow:visible; }
+  .public-week-grid { min-width:0; grid-template-columns:1fr; gap:.7rem; }
+  .public-day { display:block; }
+  .public-day>header { height:56px; margin-bottom:.35rem; }
+  .public-day.today>header strong { width:32px; height:32px; margin:0; }
+  .public-day-events { min-height:0; gap:.35rem; }
+  .public-session-card { min-height:180px; }
+  .public-login-prompt { bottom:8px; gap:.45rem .8rem; padding:.7rem 1rem; text-align:center; }
+  .public-login-prompt strong { width:100%; }
+  .public-login-prompt i { display:none; }
+}
