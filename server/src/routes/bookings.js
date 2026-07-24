@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { Booking } from "../models/Booking.js";
 import { ClassSession } from "../models/ClassSession.js";
+import { User } from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { claimSeat, releaseSeat } from "../services/capacity.js";
 import { hasActiveMembership } from "../services/membership.js";
+import { findClientConflict } from "../services/conflict.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 const router = Router();
@@ -12,6 +14,22 @@ router.use(requireAuth);
 
 const isOwnerInstructor = (req, session) =>
   req.user.role === "admin" || session.instructor.toString() === req.user._id.toString();
+
+async function validateClientSlot({ clientId, session, excludeBookingId }) {
+  const client = await User.findOne({ _id: clientId, role: "client", active: true });
+  if (!client) throw new HttpError(400, "Selected client was not found or is inactive");
+  const clash = await findClientConflict({
+    clientId,
+    startAt: session.startAt,
+    endAt: session.endAt,
+    excludeSessionId: session._id,
+    excludeBookingId,
+  });
+  if (clash) {
+    throw new HttpError(409, `${client.name} already has a booking that overlaps this time`);
+  }
+  return client;
+}
 
 // POST /api/bookings  { sessionId, note }  — client requests a seat (pending).
 router.post(
@@ -27,12 +45,13 @@ router.post(
 
     const session = await ClassSession.findById(sessionId);
     if (!session) throw new HttpError(404, "Session not found");
-    if (!["open", "confirmed"].includes(session.status)) {
+    if (!["open", "confirmed", "rescheduled"].includes(session.status)) {
       throw new HttpError(400, "This class is not open for booking");
     }
     if (new Date(session.startAt) < new Date()) throw new HttpError(400, "That class has already started");
 
-    const clientId = req.user._id;
+    const clientId = req.user.role === "admin" && req.body.clientId ? req.body.clientId : req.user._id;
+    await validateClientSlot({ clientId, session });
     const existing = await Booking.findOne({ session: sessionId, client: clientId });
     if (existing && !["cancelled", "declined"].includes(existing.status)) {
       throw new HttpError(409, "You already have a booking for this class");
@@ -47,6 +66,54 @@ router.post(
       booking = await Booking.create({ session: sessionId, client: clientId, note: note || "", status: "pending" });
     }
     res.status(201).json({ booking: booking.toPublic() });
+  })
+);
+
+// Admin overview of every client booking, including its schedule.
+router.get(
+  "/",
+  requireRole("admin"),
+  asyncHandler(async (_req, res) => {
+    const bookings = await Booking.find()
+      .populate("client", "name email picture phone active")
+      .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] })
+      .sort("-createdAt");
+    res.json({ bookings: bookings.filter((b) => b.session).map((b) => b.toPublic()) });
+  })
+);
+
+// Admin can assign a client directly. The booking is accepted and occupies a seat.
+router.post(
+  "/admin",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const { sessionId, clientId, note = "" } = req.body || {};
+    if (!sessionId || !clientId) throw new HttpError(400, "sessionId and clientId are required");
+    const session = await ClassSession.findById(sessionId);
+    if (!session) throw new HttpError(404, "Session not found");
+    if (!["open", "confirmed", "rescheduled"].includes(session.status)) {
+      throw new HttpError(400, "Selected schedule is not available for booking");
+    }
+    if (session.startAt < new Date()) throw new HttpError(400, "Selected schedule has already started");
+    await validateClientSlot({ clientId, session });
+    const existing = await Booking.findOne({ session: sessionId, client: clientId });
+    if (existing && !["cancelled", "declined"].includes(existing.status)) {
+      throw new HttpError(409, "This client is already assigned to the selected schedule");
+    }
+
+    const seat = await claimSeat(session._id);
+    if (!seat) throw new HttpError(409, "This schedule is already full");
+    try {
+      const booking = existing || new Booking({ session: sessionId, client: clientId });
+      booking.status = "accepted";
+      booking.note = note;
+      await booking.save();
+      await booking.populate("client", "name email picture phone");
+      res.status(201).json({ booking: booking.toPublic() });
+    } catch (error) {
+      await releaseSeat(session._id);
+      throw error;
+    }
   })
 );
 
@@ -86,6 +153,49 @@ router.post(
     booking.status = "accepted";
     await booking.save();
     res.json({ booking: booking.toPublic(), seatsLeft: Math.max(0, seat.capacity - seat.acceptedCount) });
+  })
+);
+
+// Admin reschedules an individual booking to another available schedule.
+router.patch(
+  "/:id",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const booking = await Booking.findById(req.params.id).populate("session");
+    if (!booking) throw new HttpError(404, "Booking not found");
+    const targetId = req.body?.sessionId;
+    if (!targetId) throw new HttpError(400, "sessionId is required");
+    if (targetId === booking.session._id.toString()) return res.json({ booking: booking.toPublic() });
+
+    const target = await ClassSession.findById(targetId);
+    if (!target) throw new HttpError(404, "Target schedule not found");
+    if (!["open", "confirmed", "rescheduled"].includes(target.status) || target.startAt < new Date()) {
+      throw new HttpError(400, "Target schedule is not available");
+    }
+    await validateClientSlot({ clientId: booking.client, session: target, excludeBookingId: booking._id });
+    const duplicate = await Booking.findOne({ session: target._id, client: booking.client, _id: { $ne: booking._id } });
+    if (duplicate) throw new HttpError(409, "Client already has a booking record for the target schedule");
+
+    const wasAccepted = booking.status === "accepted";
+    if (wasAccepted) {
+      const seat = await claimSeat(target._id);
+      if (!seat) throw new HttpError(409, "Target schedule is already full");
+    }
+    const oldSessionId = booking.session._id;
+    try {
+      booking.session = target._id;
+      booking.status = wasAccepted ? "accepted" : "pending";
+      if (req.body.note !== undefined) booking.note = req.body.note;
+      await booking.save();
+      if (wasAccepted) await releaseSeat(oldSessionId);
+      const result = await Booking.findById(booking._id)
+        .populate("client", "name email picture phone")
+        .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] });
+      res.json({ booking: result.toPublic(), rescheduled: true });
+    } catch (error) {
+      if (wasAccepted) await releaseSeat(target._id);
+      throw error;
+    }
   })
 );
 

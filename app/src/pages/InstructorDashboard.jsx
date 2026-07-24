@@ -43,6 +43,10 @@ export default function InstructorDashboard() {
   async function saveForm() {
     setBusy(true); setMsg(null);
     try {
+      const today = toLocalInput(new Date()).slice(0, 10);
+      if (form.startAt.slice(0, 10) < today) {
+        throw new Error("Schedules cannot be created for past dates. Please select today or a future date.");
+      }
       const body = {
         title: form.title, type: form.type, room: form.room,
         startAt: new Date(form.startAt).toISOString(), endAt: new Date(form.endAt).toISOString(),
@@ -123,8 +127,8 @@ export default function InstructorDashboard() {
                 </select></div>
             </div>
             <div className="field row">
-              <div><label>Start</label><input type="datetime-local" value={form.startAt} onChange={(e) => setForm({ ...form, startAt: e.target.value })} /></div>
-              <div><label>End</label><input type="datetime-local" value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} /></div>
+              <div><label>Start</label><input type="datetime-local" min={`${toLocalInput(new Date()).slice(0, 10)}T00:00`} value={form.startAt} onChange={(e) => setForm({ ...form, startAt: e.target.value })} /></div>
+              <div><label>End</label><input type="datetime-local" min={`${form.startAt?.slice(0, 10) || toLocalInput(new Date()).slice(0, 10)}T00:00`} value={form.endAt} onChange={(e) => setForm({ ...form, endAt: e.target.value })} /></div>
             </div>
             {form.type === "group" && (
               <div className="field row">

@@ -6,7 +6,7 @@ export const SESSION_TYPES = ["group", "private"];
 // confirmed → instructor confirmed it runs (min headcount met)
 // cancelled → called off
 // completed → in the past / marked done
-export const SESSION_STATUSES = ["draft", "open", "confirmed", "cancelled", "completed"];
+export const SESSION_STATUSES = ["draft", "open", "confirmed", "rescheduled", "cancelled", "completed"];
 
 const classSessionSchema = new mongoose.Schema(
   {

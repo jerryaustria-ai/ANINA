@@ -4,7 +4,7 @@ import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
-import { fmtRange, fmtMoney, fmtInterval, STATUS_LABEL } from "../util.js";
+import { fmtRange, fmtMoney, fmtInterval, STATUS_LABEL, toLocalInput } from "../util.js";
 
 export default function AdminDashboard({ view }) {
   if (view === "rooms") return <RoomsView />;
@@ -14,25 +14,196 @@ export default function AdminDashboard({ view }) {
   return <ScheduleView />;
 }
 
+function ClientMultiSelect({ clients, value, onChange, capacity }) {
+  const [search, setSearch] = useState("");
+  const selected = new Set(value || []);
+  const filtered = clients.filter((client) =>
+    `${client.name} ${client.email}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const remaining = Math.max(0, Number(capacity || 0) - selected.size);
+
+  function toggle(id) {
+    if (selected.has(id)) onChange(value.filter((clientId) => clientId !== id));
+    else if (selected.size < Number(capacity || 0)) onChange([...value, id]);
+  }
+
+  return <div className="client-multiselect">
+    <div className="client-chips">
+      {value.map((id) => {
+        const client = clients.find((item) => item.id === id);
+        return client ? <span className="client-chip" key={id}>{client.name}
+          <button type="button" aria-label={`Remove ${client.name}`} onClick={() => toggle(id)}>×</button></span> : null;
+      })}
+      {!value.length && <span className="meta-line">No clients selected.</span>}
+    </div>
+    <div className="slot-summary"><strong>{selected.size}</strong> assigned · <strong>{remaining}</strong> remaining slot{remaining === 1 ? "" : "s"}</div>
+    <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search clients by name or email…" />
+    <div className="client-checklist">
+      {filtered.map((client) => {
+        const checked = selected.has(client.id);
+        const disabled = !checked && selected.size >= Number(capacity || 0);
+        return <label key={client.id} className={disabled ? "disabled" : ""}>
+          <input type="checkbox" checked={checked} disabled={disabled} onChange={() => toggle(client.id)} />
+          <span><strong>{client.name}</strong><small>{client.email}</small></span>
+        </label>;
+      })}
+      {!filtered.length && <p className="meta-line">No matching clients.</p>}
+    </div>
+  </div>;
+}
+
 /* ---------- Studio-wide schedule ---------- */
 function ScheduleView() {
   const cal = useCalendar();
   const [sessions, setSessions] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [hidden, setHidden] = useState(new Set());
   const [sel, setSel] = useState(null);
+  const [edit, setEdit] = useState(null);
+  const [assign, setAssign] = useState(null);
+  const [reschedule, setReschedule] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     const from = cal.range.from.toISOString();
     const to = cal.range.to.toISOString();
-    const { sessions } = await api(`/sessions?from=${from}&to=${to}`);
-    setSessions(sessions);
+    const [sessionData, bookingData] = await Promise.all([
+      api(`/sessions?from=${from}&to=${to}`),
+      api("/bookings"),
+    ]);
+    setSessions(sessionData.sessions);
+    setBookings(bookingData.bookings);
+    if (sel) setSel(sessionData.sessions.find((session) => session.id === sel.id) || null);
   }
   useEffect(() => { load().catch((e) => setMsg({ kind: "err", text: e.message })); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
-  useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)); }, []);
+  useEffect(() => {
+    Promise.all([api("/rooms"), api("/users")])
+      .then(([roomData, userData]) => { setRooms(roomData.rooms); setUsers(userData.users); })
+      .catch((e) => setMsg({ kind: "err", text: e.message }));
+  }, []);
+
+  const clients = users.filter((user) => user.role === "client" && user.active);
+  const instructors = users.filter((user) => user.role === "instructor" && user.active);
+  const activeSessions = sessions.filter((session) =>
+    ["open", "confirmed", "rescheduled"].includes(session.status) && new Date(session.startAt) > new Date());
+  const selectedBookings = sel ? bookings.filter((booking) =>
+    booking.session?.id === sel.id && ["pending", "accepted", "waitlisted"].includes(booking.status)) : [];
+  const serviceNames = [...new Set(sessions.map((session) => session.title).filter(Boolean))];
 
   const toggle = (id) => setHidden((h) => { const n = new Set(h); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  function newSchedule() {
+    const start = new Date();
+    start.setDate(start.getDate() + 1); start.setHours(9, 0, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    setEdit({
+      title: "", type: "group", instructor: instructors[0]?.id || "", room: rooms[0]?.id || "",
+      startAt: toLocalInput(start), endAt: toLocalInput(end), capacity: 1, minToRun: 1,
+      notes: "", status: "open", clientIds: [],
+    });
+  }
+
+  function editSchedule(session) {
+    const clientIds = bookings.filter((booking) =>
+      booking.session?.id === session.id && ["pending", "accepted", "waitlisted"].includes(booking.status))
+      .map((booking) => booking.client?.id).filter(Boolean);
+    setEdit({
+      id: session.id, title: session.title, type: session.type,
+      instructor: session.instructor?.id || "", room: session.room?.id || "",
+      startAt: toLocalInput(session.startAt), endAt: toLocalInput(session.endAt),
+      capacity: session.capacity, minToRun: session.minToRun, notes: session.notes || "",
+      status: session.status, clientIds,
+    });
+  }
+
+  async function saveSchedule() {
+    setBusy(true); setMsg(null);
+    let createdId = null;
+    try {
+      const today = toLocalInput(new Date()).slice(0, 10);
+      if (edit.startAt.slice(0, 10) < today) {
+        throw new Error("Schedules cannot be created for past dates. Please select today or a future date.");
+      }
+      const body = {
+        title: edit.title.trim(), type: edit.type, instructor: edit.instructor, room: edit.room,
+        startAt: new Date(edit.startAt).toISOString(), endAt: new Date(edit.endAt).toISOString(),
+        capacity: Number(edit.capacity), minToRun: Number(edit.minToRun), notes: edit.notes,
+        status: edit.status, clientIds: edit.clientIds,
+      };
+      if (!body.title || !body.instructor || !body.room) throw new Error("Service, instructor, and room are required");
+      if (edit.clientIds.length > body.capacity) throw new Error(`Only ${body.capacity} clients can be assigned to this class`);
+      if (edit.id) {
+        await api(`/sessions/${edit.id}`, { method: "PATCH", body });
+        await api(`/sessions/${edit.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
+        setMsg({ kind: "ok", text: `Schedule updated with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.` });
+      } else {
+        const { session } = await api("/sessions", { method: "POST", body });
+        createdId = session.id;
+        await api(`/sessions/${session.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
+        await api(`/sessions/${session.id}`, { method: "PATCH", body: { status: "open" } });
+        setMsg({ kind: "ok", text: `Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.` });
+      }
+      setEdit(null); await load();
+    } catch (e) {
+      if (createdId) {
+        try { await api(`/sessions/${createdId}`, { method: "DELETE" }); } catch { /* retain it if booking writes unexpectedly succeeded */ }
+      }
+      setMsg({ kind: "err", text: e.message });
+    }
+    finally { setBusy(false); }
+  }
+
+  async function assignClients() {
+    setBusy(true); setMsg(null);
+    try {
+      const result = await api(`/sessions/${assign.sessionId}/clients`, { method: "PUT", body: { clientIds: assign.clientIds } });
+      setAssign(null); await load();
+      setMsg({ kind: "ok", text: `${result.assignedCount} client assignment${result.assignedCount === 1 ? "" : "s"} saved.` });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelBooking(booking) {
+    if (!window.confirm(`Cancel ${booking.client?.name}'s booking for ${booking.session?.title}?`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/bookings/${booking.id}/cancel`, { method: "POST" });
+      await load(); setMsg({ kind: "ok", text: "Booking cancelled." });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  async function moveBooking() {
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/bookings/${reschedule.booking.id}`, { method: "PATCH", body: { sessionId: reschedule.sessionId } });
+      setReschedule(null); await load();
+      setMsg({ kind: "ok", text: "Booking rescheduled." });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelSchedule(session) {
+    if (!window.confirm(`Cancel "${session.title}"? Active client bookings will also be cancelled.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/sessions/${session.id}/cancel`, { method: "POST" });
+      setSel(null); await load(); setMsg({ kind: "ok", text: "Schedule and active bookings cancelled." });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  async function deleteSchedule(session) {
+    if (!window.confirm(`Permanently delete "${session.title}"? This is allowed only when it has no booking history.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/sessions/${session.id}`, { method: "DELETE" });
+      setSel(null); await load(); setMsg({ kind: "ok", text: "Unused schedule permanently deleted." });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
 
   const events = sessions
     .filter((s) => !hidden.has(s.room?.id))
@@ -45,7 +216,8 @@ function ScheduleView() {
 
   return (
     <div className="page">
-      <div className="page-head"><div><h1>Studio schedule</h1><p>Every class, every room, every instructor.</p></div></div>
+      <div className="page-head"><div><h1>Studio schedule</h1><p>Manage all client and instructor schedules.</p></div>
+        <button className="btn" onClick={newSchedule}>+ Create schedule</button></div>
       {msg && <div className={"banner " + msg.kind}>{msg.text}</div>}
 
       <div className="toolbar-row">
@@ -65,8 +237,9 @@ function ScheduleView() {
       />
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
-        footer={sel && sel.status !== "cancelled" &&
-          <button className="btn danger" onClick={() => api(`/sessions/${sel.id}/cancel`, { method: "POST" }).then(() => { setSel(null); load(); })}>Cancel class</button>}>
+        footer={sel && <><button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
+          <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete</button>
+          {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel schedule</button>}</>}>
         {sel && (
           <div>
             <div className="inst-row">
@@ -80,8 +253,69 @@ function ScheduleView() {
             <p className="meta-line">📍 {sel.room?.name}</p>
             <p className="meta-line">👥 {sel.acceptedCount}/{sel.minToRun} min · {sel.capacity} capacity</p>
             <p className="meta-line">Status: <span className={"status-tag " + sel.status}>{STATUS_LABEL[sel.status]}</span></p>
+            <div className="schedule-detail-head"><h4>Client bookings</h4>
+              {["open", "confirmed", "rescheduled"].includes(sel.status) &&
+                <button className="btn sm" onClick={() => setAssign({ sessionId: sel.id, clientIds: selectedBookings.map((booking) => booking.client?.id).filter(Boolean), capacity: sel.capacity })}>Manage clients</button>}</div>
+            <p className="meta-line"><strong>{selectedBookings.length}</strong> assigned · <strong>{Math.max(0, sel.capacity - selectedBookings.length)}</strong> remaining slots</p>
+            {selectedBookings.length === 0 ? <p className="meta-line">No client bookings.</p> :
+              selectedBookings.map((booking) => (
+                <div className="schedule-booking" key={booking.id}>
+                  <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status}</span></div>
+                  <div className="schedule-booking-actions">
+                    {!["cancelled", "declined"].includes(booking.status) &&
+                      <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
+                    {["pending", "accepted", "waitlisted"].includes(booking.status) &&
+                      <button className="btn danger sm" onClick={() => cancelBooking(booking)} disabled={busy}>Cancel</button>}
+                  </div>
+                </div>
+              ))}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit or reschedule" : "Create schedule"}
+        footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Close</button>
+          <button className="btn" onClick={saveSchedule} disabled={busy || !edit?.title || !edit?.instructor || !edit?.room}>Save</button></>}>
+        {edit && <div>
+          <div className="field"><label>Available service / class name</label>
+            <input list="admin-services" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} placeholder="Select or enter a service" />
+            <datalist id="admin-services">{serviceNames.map((name) => <option value={name} key={name} />)}</datalist></div>
+          <div className="field row"><div><label>Instructor</label><select value={edit.instructor} onChange={(e) => setEdit({ ...edit, instructor: e.target.value })}>
+            <option value="">Select instructor</option>{instructors.map((u) => <option value={u.id} key={u.id}>{u.name}</option>)}</select></div>
+            <div><label>Room</label><select value={edit.room} onChange={(e) => {
+              const room = rooms.find((item) => item.id === e.target.value);
+              setEdit({ ...edit, room: e.target.value, capacity: Math.min(Number(edit.capacity), room?.maxCapacity || Number(edit.capacity)) });
+            }}><option value="">Select room</option>{rooms.map((room) => <option value={room.id} key={room.id}>{room.name}</option>)}</select></div></div>
+          <div className="field row"><div><label>Start</label><input type="datetime-local" min={`${toLocalInput(new Date()).slice(0, 10)}T00:00`} value={edit.startAt} onChange={(e) => setEdit({ ...edit, startAt: e.target.value })} /></div>
+            <div><label>End</label><input type="datetime-local" min={`${edit.startAt?.slice(0, 10) || toLocalInput(new Date()).slice(0, 10)}T00:00`} value={edit.endAt} onChange={(e) => setEdit({ ...edit, endAt: e.target.value })} /></div></div>
+          <div className="field row"><div><label>Type</label><select value={edit.type} disabled={!!edit.id} onChange={(e) => setEdit({ ...edit, type: e.target.value, capacity: e.target.value === "private" ? 1 : edit.capacity })}>
+            <option value="group">Group</option><option value="private">Private</option></select></div>
+            <div><label>Capacity</label><input type="number" min="1" disabled={edit.type === "private"} value={edit.capacity} onChange={(e) => setEdit({ ...edit, capacity: e.target.value })} /></div></div>
+          {edit.id && <div className="field"><label>Schedule status</label><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+            <option value="open">Scheduled</option><option value="confirmed">Confirmed</option><option value="rescheduled">Rescheduled</option><option value="completed">Completed</option>
+          </select></div>}
+          <div className="field"><label>Assigned clients</label>
+            <ClientMultiSelect clients={clients} value={edit.clientIds} capacity={Number(edit.capacity)}
+              onChange={(clientIds) => setEdit({ ...edit, clientIds })} /></div>
+          <div className="field"><label>Notes</label><textarea rows="2" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
+        </div>}
+      </Modal>
+
+      <Modal open={!!assign} onClose={() => setAssign(null)} title="Manage assigned clients"
+        footer={<><button className="btn ghost" onClick={() => setAssign(null)}>Close</button>
+          <button className="btn" onClick={assignClients} disabled={busy}>Save assignments</button></>}>
+        {assign && <div><p className="meta-line">Removing a client removes only that assignment. The schedule and other clients remain unchanged.</p>
+          <ClientMultiSelect clients={clients} value={assign.clientIds} capacity={assign.capacity}
+            onChange={(clientIds) => setAssign({ ...assign, clientIds })} /></div>}
+      </Modal>
+
+      <Modal open={!!reschedule} onClose={() => setReschedule(null)} title="Reschedule booking"
+        footer={<><button className="btn ghost" onClick={() => setReschedule(null)}>Close</button>
+          <button className="btn" onClick={moveBooking} disabled={busy || !reschedule?.sessionId}>Confirm reschedule</button></>}>
+        {reschedule && <div><p className="meta-line">Client: <strong>{reschedule.booking.client?.name}</strong><br />Current: {reschedule.booking.session?.title} — {fmtRange(reschedule.booking.session?.startAt, reschedule.booking.session?.endAt)}</p>
+          <div className="field"><label>New available schedule</label><select value={reschedule.sessionId} onChange={(e) => setReschedule({ ...reschedule, sessionId: e.target.value })}>
+            <option value="">Select schedule</option>{activeSessions.filter((session) => session.id !== reschedule.booking.session?.id).map((session) =>
+              <option value={session.id} key={session.id}>{session.title} — {fmtRange(session.startAt, session.endAt)} — {session.instructor?.name}</option>)}</select></div></div>}
       </Modal>
     </div>
   );

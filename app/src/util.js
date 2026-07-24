@@ -42,6 +42,6 @@ export function fmtInterval(interval, count = 1) {
 
 // Palette for status badges reused in dashboards.
 export const STATUS_LABEL = {
-  draft: "Draft", open: "Open", confirmed: "Confirmed", cancelled: "Cancelled", completed: "Done",
+  draft: "Draft", open: "Scheduled", confirmed: "Scheduled", rescheduled: "Rescheduled", cancelled: "Cancelled", completed: "Completed",
   pending: "Pending", accepted: "Accepted", waitlisted: "Waitlisted", declined: "Declined",
 };
