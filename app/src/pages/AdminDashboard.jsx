@@ -65,6 +65,7 @@ function ScheduleView() {
   const [edit, setEdit] = useState(null);
   const [assign, setAssign] = useState(null);
   const [reschedule, setReschedule] = useState(null);
+  const [scheduleReview, setScheduleReview] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -212,6 +213,47 @@ function ScheduleView() {
     finally { setBusy(false); }
   }
 
+  async function approveSchedule(session) {
+    setBusy(true);
+    try {
+      await api(`/sessions/${session.id}/approve`, { method: "POST" });
+      setSel(null);
+      await load();
+      toast.success("Schedule approved and published successfully.");
+    } catch (e) { toast.error(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function submitScheduleReview() {
+    const text = scheduleReview?.text.trim();
+    if (!text) {
+      toast.error(scheduleReview?.action === "reject"
+        ? "A rejection reason is required."
+        : "Change request notes are required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (scheduleReview.action === "reject") {
+        await api(`/sessions/${scheduleReview.session.id}/reject`, {
+          method: "POST",
+          body: { reason: text },
+        });
+        toast.warning("Schedule rejected.");
+      } else {
+        await api(`/sessions/${scheduleReview.session.id}/request-changes`, {
+          method: "POST",
+          body: { notes: text },
+        });
+        toast.info("Changes requested from the Instructor.");
+      }
+      setScheduleReview(null);
+      setSel(null);
+      await load();
+    } catch (e) { toast.error(e.message); }
+    finally { setBusy(false); }
+  }
+
   async function deleteSchedule(session) {
     setBusy(true);
     try {
@@ -262,12 +304,18 @@ function ScheduleView() {
       />
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
-        footer={sel && <><button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
+        footer={sel && <>{sel.status === "pending_approval" ? <>
+          <button className="btn danger" onClick={() => setScheduleReview({ session: sel, action: "reject", text: "" })} disabled={busy}>Reject</button>
+          <button className="btn clay" onClick={() => setScheduleReview({ session: sel, action: "changes", text: "" })} disabled={busy}>Request Changes</button>
+          <button className="btn" onClick={() => approveSchedule(sel)} disabled={busy}>Approve &amp; Publish</button>
+        </> : <>
+          <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
           {sel.status === "cancelled" &&
             sel.cancelledByRole === "instructor" &&
             String(sel.cancelledBy) === String(sel.instructor?.id) &&
             <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete Session</button>}
-          {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel Session</button>}</>}>
+          {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel Session</button>}
+        </>}</>}>
         {sel && (
           <div>
             <div className="inst-row">
@@ -316,6 +364,22 @@ function ScheduleView() {
             </>}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!scheduleReview} onClose={() => setScheduleReview(null)}
+        title={scheduleReview?.action === "reject" ? "Reject schedule" : "Request changes"}
+        footer={<><button className="btn ghost" onClick={() => setScheduleReview(null)}>Cancel</button>
+          <button className={scheduleReview?.action === "reject" ? "btn danger" : "btn"}
+            onClick={submitScheduleReview}
+            disabled={busy || !scheduleReview?.text.trim()}>
+            {scheduleReview?.action === "reject" ? "Reject" : "Send request"}
+          </button></>}>
+        {scheduleReview && <div className="field">
+          <label>{scheduleReview.action === "reject" ? "Rejection reason" : "Required changes"}</label>
+          <textarea rows="4" value={scheduleReview.text}
+            onChange={(event) => setScheduleReview({ ...scheduleReview, text: event.target.value })}
+            autoFocus />
+        </div>}
       </Modal>
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit or reschedule" : "Create schedule"}
