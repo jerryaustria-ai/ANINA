@@ -31,6 +31,8 @@ userSchema.methods.toPublic = function () {
     active: this.active,
     bio: this.bio,
     specialties: this.specialties,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
   };
 };
 

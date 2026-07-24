@@ -10,6 +10,14 @@ import { asyncHandler, HttpError } from "../utils/http.js";
 const router = Router();
 router.use(requireAuth);
 
+function validatePicture(picture) {
+  const validData = /^data:image\/(jpeg|png|webp);base64,/.test(picture);
+  const validUrl = /^https:\/\//i.test(picture);
+  if (picture && ((!validData && !validUrl) || picture.length > 500_000)) {
+    throw new HttpError(400, "Profile picture must be a JPEG, PNG, or WebP image under 500 KB");
+  }
+}
+
 // Instructors list — used by client booking UI and admin assignment.
 router.get(
   "/instructors",
@@ -43,9 +51,7 @@ router.post(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Invalid email");
     if (typeof password !== "string" || password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
     if (!ROLES.includes(role)) throw new HttpError(400, "Invalid role");
-    if (picture && (!/^data:image\/(jpeg|png|webp);base64,/.test(picture) || picture.length > 500_000)) {
-      throw new HttpError(400, "Profile picture must be a JPEG, PNG, or WebP image under 500 KB");
-    }
+    validatePicture(picture);
     if (await User.findOne({ email })) throw new HttpError(409, "A user with that email already exists");
 
     const user = await User.create({
@@ -57,6 +63,64 @@ router.post(
       passwordHash: await hashPassword(password),
     });
     res.status(201).json({ user: user.toPublic() });
+  })
+);
+
+// Admin: view one user's complete public profile.
+router.get(
+  "/:id",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new HttpError(404, "User not found");
+    res.json({ user: user.toPublic() });
+  })
+);
+
+// Admin: update profile information and optionally reset the password.
+router.patch(
+  "/:id",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id).select("+passwordHash");
+    if (!user) throw new HttpError(404, "User not found");
+
+    const body = req.body || {};
+    if (body.email !== undefined) {
+      const email = String(body.email).toLowerCase().trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Invalid email");
+      const duplicate = await User.exists({ email, _id: { $ne: user._id } });
+      if (duplicate) throw new HttpError(409, "A user with that email already exists");
+      user.email = email;
+    }
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name) throw new HttpError(400, "Name is required");
+      user.name = name;
+    }
+    if (body.phone !== undefined) user.phone = String(body.phone).trim();
+    if (body.bio !== undefined) user.bio = String(body.bio);
+    if (body.specialties !== undefined) user.specialties = Array.isArray(body.specialties) ? body.specialties : [];
+    if (body.picture !== undefined) {
+      validatePicture(body.picture);
+      user.picture = body.picture;
+    }
+    if (body.role !== undefined) {
+      if (!ROLES.includes(body.role)) throw new HttpError(400, "Invalid role");
+      if (user._id.equals(req.user._id) && body.role !== "admin") throw new HttpError(400, "You can't demote yourself");
+      user.role = body.role;
+    }
+    if (body.active !== undefined) {
+      if (user._id.equals(req.user._id) && !body.active) throw new HttpError(400, "You can't deactivate yourself");
+      user.active = !!body.active;
+    }
+    if (body.password) {
+      if (typeof body.password !== "string" || body.password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+      user.passwordHash = await hashPassword(body.password);
+    }
+
+    await user.save();
+    res.json({ user: user.toPublic() });
   })
 );
 

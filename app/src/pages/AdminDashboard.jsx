@@ -149,7 +149,7 @@ function RoomsView() {
 }
 
 /* ---------- People & roles ---------- */
-const blankUser = { name: "", email: "", password: "", role: "client", picture: "" };
+const blankUser = { name: "", email: "", phone: "", password: "", role: "client", picture: "" };
 
 function resizeProfilePicture(file) {
   return new Promise((resolve, reject) => {
@@ -180,6 +180,7 @@ function PeopleView() {
   const [users, setUsers] = useState([]);
   const [msg, setMsg] = useState(null);
   const [add, setAdd] = useState(null);
+  const [editUser, setEditUser] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = () => api("/users").then(({ users }) => setUsers(users));
   useEffect(() => { load(); }, []);
@@ -214,6 +215,20 @@ function PeopleView() {
     finally { setBusy(false); }
   }
 
+  async function updateUser() {
+    setBusy(true); setMsg(null);
+    try {
+      const body = { ...editUser };
+      if (!body.password) delete body.password;
+      body.specialties = String(body.specialtiesText || "").split(",").map((item) => item.trim()).filter(Boolean);
+      delete body.specialtiesText;
+      const { user } = await api(`/users/${editUser.id}`, { method: "PATCH", body });
+      setEditUser(null); await load();
+      setMsg({ kind: "ok", text: `Updated ${user.name}.` });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -230,6 +245,7 @@ function PeopleView() {
               <div className="em">{u.email}</div>
             </div>
             <span className={"role-pill " + u.role}>{u.role}</span>
+            <button className="btn ghost sm" onClick={() => setEditUser({ ...u, password: "", specialtiesText: (u.specialties || []).join(", ") })}>View / Edit</button>
             <select value={u.role} onChange={(e) => setRole(u.id, e.target.value)}
               style={{ padding: "0.35rem 0.5rem", borderRadius: 6, border: "1px solid var(--line)" }}>
               <option value="client">client</option>
@@ -253,6 +269,8 @@ function PeopleView() {
               <input value={add.name} onChange={(e) => setAdd({ ...add, name: e.target.value })} placeholder="Full name (optional)" /></div>
             <div className="field"><label>Email</label>
               <input type="email" value={add.email} onChange={(e) => setAdd({ ...add, email: e.target.value })} placeholder="name@example.com" /></div>
+            <div className="field"><label>Phone</label>
+              <input type="tel" value={add.phone} onChange={(e) => setAdd({ ...add, phone: e.target.value })} placeholder="Optional phone number" /></div>
             <div className="field"><label>Initial password</label>
               <input type="password" minLength="8" autoComplete="new-password" value={add.password}
                 onChange={(e) => setAdd({ ...add, password: e.target.value })} placeholder="At least 8 characters" /></div>
@@ -279,6 +297,52 @@ function PeopleView() {
                 <option value="admin">Admin</option>
               </select></div>
             <p className="meta-line">They can use the password above or Google with the same email. Google keeps the role you set.</p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!editUser} onClose={() => setEditUser(null)} title="User details"
+        footer={<><button className="btn ghost" onClick={() => setEditUser(null)}>Cancel</button>
+          <button className="btn" onClick={updateUser} disabled={busy || !editUser?.name || !editUser?.email}>Save changes</button></>}>
+        {editUser && (
+          <div>
+            <div className="picture-picker" style={{ marginBottom: "1rem" }}>
+              <Avatar src={editUser.picture} name={editUser.name} size={72} />
+              <div>
+                <label className="btn ghost sm picture-button">Change picture
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try { setEditUser({ ...editUser, picture: await resizeProfilePicture(file) }); }
+                    catch (error) { setMsg({ kind: "err", text: error.message }); }
+                  }} />
+                </label>
+                {editUser.picture && <button type="button" className="picture-remove" onClick={() => setEditUser({ ...editUser, picture: "" })}>Remove</button>}
+              </div>
+            </div>
+            <div className="field"><label>Name</label>
+              <input value={editUser.name} onChange={(e) => setEditUser({ ...editUser, name: e.target.value })} /></div>
+            <div className="field"><label>Email</label>
+              <input type="email" value={editUser.email} onChange={(e) => setEditUser({ ...editUser, email: e.target.value })} /></div>
+            <div className="field"><label>Phone</label>
+              <input type="tel" value={editUser.phone || ""} onChange={(e) => setEditUser({ ...editUser, phone: e.target.value })} placeholder="Optional" /></div>
+            <div className="field"><label>Role</label>
+              <select value={editUser.role} onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}>
+                <option value="client">Client</option><option value="instructor">Instructor</option><option value="admin">Admin</option>
+              </select></div>
+            <div className="field"><label>Status</label>
+              <select value={editUser.active ? "active" : "inactive"} onChange={(e) => setEditUser({ ...editUser, active: e.target.value === "active" })}>
+                <option value="active">Active</option><option value="inactive">Inactive</option>
+              </select></div>
+            <div className="field"><label>New password</label>
+              <input type="password" minLength="8" autoComplete="new-password" value={editUser.password}
+                onChange={(e) => setEditUser({ ...editUser, password: e.target.value })} placeholder="Leave blank to keep current password" /></div>
+            <div className="field"><label>Bio</label>
+              <textarea rows="3" value={editUser.bio || ""} onChange={(e) => setEditUser({ ...editUser, bio: e.target.value })} placeholder="Optional profile bio" /></div>
+            <div className="field"><label>Specialties</label>
+              <input value={editUser.specialtiesText || ""} onChange={(e) => setEditUser({ ...editUser, specialtiesText: e.target.value })} placeholder="Mobility, Strength, Recovery" /></div>
+            <p className="meta-line">Created {editUser.createdAt ? new Date(editUser.createdAt).toLocaleString() : "—"}<br />
+              Last updated {editUser.updatedAt ? new Date(editUser.updatedAt).toLocaleString() : "—"}</p>
           </div>
         )}
       </Modal>
