@@ -34,6 +34,7 @@ export default function Landing() {
       <nav className={menuOpen ? "open" : ""} aria-label="Main navigation">
         <a href="#about" onClick={() => setMenuOpen(false)}>About</a>
         <a href="#services" onClick={() => setMenuOpen(false)}>Services</a>
+        <Link to="/schedule" onClick={() => setMenuOpen(false)}>Schedule</Link>
         <a href="#contact" onClick={() => setMenuOpen(false)}>Contact</a>
         {user ? <Link className="landing-login" to="/dashboard">Dashboard</Link> : <>
           <Link className="landing-login" to="/login">Login</Link>
@@ -51,7 +52,7 @@ export default function Landing() {
           <h1>Train once.<br />For a longer life.</h1>
           <p>Longevity, mobility, strength, and recovery under one roof—guided by thoughtful coaching and built for the long game.</p>
           <div className="landing-actions">
-            <Link className="landing-primary" to={user ? "/dashboard" : "/login"}>{user ? "View Schedule" : "Get Started"}</Link>
+            <Link className="landing-primary" to="/schedule">View Schedule</Link>
             <a className="landing-secondary" href="#services">Explore Services</a>
           </div>
         </div>
@@ -82,7 +83,7 @@ export default function Landing() {
         <p className="landing-kicker">Ready when you are</p>
         <h2>Find a class that fits your next chapter.</h2>
         <p>Sign in to view the live schedule, manage your membership, and request your spot.</p>
-        <Link className="landing-primary" to={user ? "/dashboard" : "/login"}>View Schedule</Link>
+        <Link className="landing-primary" to="/schedule">View Schedule</Link>
       </section>
     </main>
 

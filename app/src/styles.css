@@ -62,6 +62,65 @@ a { color:var(--sage-deep); }
 .auth-switch a,.auth-home { font-weight:600; }
 .auth-home { display:inline-block; font-size:.82rem; margin-top:.4rem; }
 
+/* ---------- Public weekly schedule ---------- */
+.public-schedule-page { min-height:100vh; background:var(--bone); }
+.public-schedule-nav { min-height:72px; padding:.8rem clamp(1.2rem,4vw,4rem); display:flex; align-items:center; justify-content:space-between;
+  gap:1rem; background:var(--ink); color:#fff; }
+.public-schedule-brand { color:#fff; text-decoration:none; font-family:var(--display); letter-spacing:.3em; font-size:1.25rem; }
+.public-schedule-nav>div { display:flex; align-items:center; gap:1rem; }
+.public-schedule-nav a { color:#fff; text-decoration:none; font-size:.84rem; }
+.public-schedule-account { border:1px solid rgba(255,255,255,.5); border-radius:100px; padding:.55rem 1rem; }
+.public-schedule-main { max-width:1500px; margin:auto; padding:clamp(2rem,5vw,4.5rem) clamp(1rem,3vw,3rem) 5rem; }
+.public-schedule-head { display:flex; align-items:flex-end; justify-content:space-between; gap:2rem; margin-bottom:2rem; }
+.public-schedule-head h1 { font-size:clamp(2.5rem,5vw,4.5rem); margin:.45rem 0; }
+.public-schedule-head>div:first-child>p:last-child { color:var(--ink-mute); max-width:600px; line-height:1.6; }
+.public-week-controls { display:grid; grid-template-columns:42px minmax(210px,auto) 42px; align-items:center; gap:.5rem; text-align:center; }
+.public-week-controls button { height:42px; border:1px solid var(--line); background:var(--white); border-radius:50%; color:var(--ink); font-size:1.1rem; }
+.public-week-controls strong { font-family:var(--display); font-weight:400; font-size:1.05rem; }
+.public-week-controls .public-today { grid-column:1/-1; border-radius:100px; height:34px; font-size:.76rem; color:var(--sage-deep); }
+.public-week-wrap { overflow-x:auto; border:1px solid var(--line); background:var(--white); }
+.public-week-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); min-width:1050px; }
+.public-day { min-width:0; border-right:1px solid var(--line); }
+.public-day:last-child { border-right:0; }
+.public-day>header { height:86px; display:grid; place-content:center; text-align:center; position:relative; border-bottom:1px solid var(--line); background:#f8f5ef; }
+.public-day>header span { text-transform:uppercase; letter-spacing:.12em; color:var(--ink-mute); font-size:.7rem; }
+.public-day>header strong { font-family:var(--display); font-size:1.6rem; font-weight:400; }
+.public-day>header em { position:absolute; bottom:5px; left:50%; transform:translateX(-50%); font-style:normal; font-size:.6rem; color:var(--clay); text-transform:uppercase; letter-spacing:.12em; }
+.public-day.today>header { background:var(--sage-deep); color:#fff; }
+.public-day.today>header span,.public-day.today>header em { color:rgba(255,255,255,.8); }
+.public-day-events { min-height:460px; }
+.public-no-events { text-align:center; color:#aaa296; font-size:.76rem; margin:2rem .5rem; }
+.public-session-card { padding:1rem; border-bottom:1px solid var(--line); position:relative; }
+.public-session-date { color:var(--ink-mute); font-size:.62rem; text-transform:uppercase; letter-spacing:.08em; }
+.public-session-time { color:var(--clay); font-size:.75rem; font-weight:600; margin:.15rem 0 .45rem; }
+.public-session-card h2 { font-family:var(--sans); font-size:.93rem; font-weight:600; line-height:1.35; min-height:2.5em; }
+.public-session-card>p { color:var(--ink-mute); font-size:.76rem; margin:.45rem 0; }
+.public-session-card dl { margin:.65rem 0; display:flex; gap:.8rem; }
+.public-session-card dl div { display:flex; flex-direction:column; }
+.public-session-card dt { color:var(--ink-mute); font-size:.61rem; text-transform:uppercase; letter-spacing:.08em; }
+.public-session-card dd { margin:0; font-size:.72rem; }
+.public-availability { display:inline-flex; padding:.2rem .5rem; border-radius:100px; font-size:.63rem; font-weight:600; background:#e8efe3; color:var(--sage-deep); }
+.public-availability.waitlist,.public-availability.full { background:#f4e9d8; color:#8b611d; }
+.public-availability.closed { background:#ece8e2; color:var(--ink-mute); }
+.public-details { display:block; border:0; background:transparent; color:var(--sage-deep); font-size:.7rem; padding:.65rem 0 .4rem; text-decoration:underline; }
+.public-book { width:100%; border:1px solid var(--sage-deep); background:var(--sage-deep); color:#fff; border-radius:100px; padding:.55rem .5rem; font-size:.75rem; font-weight:600; }
+.public-book:disabled { background:#e4e0da; border-color:#e4e0da; color:#999188; cursor:not-allowed; }
+.public-week-empty { padding:1.5rem; text-align:center; border-top:1px solid var(--line); color:var(--ink-mute); font-style:italic; }
+.public-schedule-state { min-height:360px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.8rem;
+  border:1px solid var(--line); background:var(--white); color:var(--ink-mute); text-align:center; padding:2rem; }
+.public-schedule-state.error strong { color:#9a3d33; }
+.public-schedule-state button { border:1px solid var(--sage-deep); background:transparent; color:var(--sage-deep); border-radius:100px; padding:.5rem 1rem; }
+.schedule-loader { width:30px; height:30px; border:3px solid var(--paper-deep); border-top-color:var(--sage); border-radius:50%; animation:schedule-spin .8s linear infinite; }
+@keyframes schedule-spin { to { transform:rotate(360deg); } }
+.public-detail-backdrop { position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:1rem; background:rgba(34,31,26,.58); }
+.public-detail-modal { width:min(480px,100%); background:var(--white); border-radius:10px; padding:2rem; position:relative; box-shadow:0 25px 70px rgba(0,0,0,.25); }
+.public-detail-close { position:absolute; top:.8rem; right:.9rem; border:0; background:transparent; font-size:1.5rem; color:var(--ink-mute); }
+.public-detail-modal h2 { font-size:2rem; margin:.6rem 0; }
+.public-detail-modal>p:not(.landing-kicker) { color:var(--ink-soft); line-height:1.6; }
+.public-detail-modal dl { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; margin:1.2rem 0; padding:1rem 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.public-detail-modal dt { color:var(--ink-mute); font-size:.66rem; text-transform:uppercase; letter-spacing:.08em; }
+.public-detail-modal dd { margin:.2rem 0 0; font-size:.86rem; }
+
 @media (max-width:760px) {
   .landing-nav { height:70px; }
   .landing-brand img { width:120px; }
@@ -74,6 +133,19 @@ a { color:var(--sage-deep); }
   .landing-hero-content { margin:0 auto; padding-top:3rem; }
   .landing-about,.landing-service-grid,.landing-footer { grid-template-columns:1fr; }
   .landing-footer { gap:1rem; }
+  .public-schedule-nav>div { gap:.6rem; }
+  .public-schedule-head { align-items:stretch; flex-direction:column; }
+  .public-week-controls { width:100%; grid-template-columns:42px 1fr 42px; }
+  .public-week-wrap { overflow:visible; border:0; background:transparent; }
+  .public-week-grid { min-width:0; grid-template-columns:1fr; gap:.8rem; }
+  .public-day { border:1px solid var(--line); background:var(--white); }
+  .public-day>header { height:64px; display:flex; align-items:center; justify-content:flex-start; gap:.55rem; padding:0 1rem; }
+  .public-day>header strong { font-size:1.25rem; }
+  .public-day>header em { position:static; transform:none; margin-left:auto; }
+  .public-day-events { min-height:0; }
+  .public-session-card h2 { min-height:0; }
+  .public-session-card dl { justify-content:flex-start; }
+  .public-detail-modal dl { grid-template-columns:1fr; }
 }
 
 /* ---------- App shell ---------- */

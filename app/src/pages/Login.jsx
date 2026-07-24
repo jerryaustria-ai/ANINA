@@ -19,6 +19,9 @@ export default function Login({ mode = "login" }) {
   const { loginWithGoogle, loginWithPassword, devLogin } = useAuth();
   const navigate = useNavigate();
   const registering = mode === "register";
+  const requestedNext = new URLSearchParams(window.location.search).get("next");
+  const next = requestedNext?.startsWith("/dashboard") ? requestedNext : "/dashboard";
+  const nextQuery = requestedNext?.startsWith("/dashboard") ? `?next=${encodeURIComponent(requestedNext)}` : "";
   const [form, setForm] = useState({ email: "", password: "" });
   const [busy, setBusy] = useState(false);
 
@@ -32,7 +35,7 @@ export default function Login({ mode = "login" }) {
     try {
       const user = await loginWithPassword(form.email, form.password);
       toast.success(`Welcome back, ${user.name}.`);
-      navigate("/dashboard", { replace: true });
+      navigate(next, { replace: true });
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -67,7 +70,7 @@ export default function Login({ mode = "login" }) {
           <div style={{ display: "flex", justifyContent: "center" }}>
             <GoogleLogin
               onSuccess={(res) => loginWithGoogle(res.credential)
-                .then((user) => { toast.success(`Welcome, ${user.name}.`); navigate("/dashboard", { replace: true }); })
+                .then((user) => { toast.success(`Welcome, ${user.name}.`); navigate(next, { replace: true }); })
                 .catch((e) => toast.error(e.message))}
               onError={() => toast.error("Google sign-in failed. Please try again.")}
             />
@@ -84,14 +87,14 @@ export default function Login({ mode = "login" }) {
             {DEV_USERS.map(([label, email]) => (
               <div className="row" key={email}>
                 <button onClick={() => devLogin(email)
-                  .then((user) => { toast.success(`Signed in as ${user.name}.`); navigate("/dashboard", { replace: true }); })
+                  .then((user) => { toast.success(`Signed in as ${user.name}.`); navigate(next, { replace: true }); })
                   .catch((e) => toast.error(e.message))}>{label}</button>
               </div>
             ))}
           </div>
         )}
         <p className="auth-switch">{registering ? "Already have an account?" : "New to ANINA?"}{" "}
-          <Link to={registering ? "/login" : "/register"}>{registering ? "Login" : "Register"}</Link>
+          <Link to={`${registering ? "/login" : "/register"}${nextQuery}`}>{registering ? "Login" : "Register"}</Link>
         </p>
         <Link className="auth-home" to="/">← Back to home</Link>
       </div>

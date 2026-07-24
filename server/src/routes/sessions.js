@@ -15,7 +15,6 @@ import { SessionAudit } from "../models/SessionAudit.js";
 import { createAuditLog } from "../services/audit.js";
 
 const router = Router();
-router.use(requireAuth);
 
 const populate = (q) =>
   q.populate("instructor", "name email picture role").populate("room", "name color maxCapacity location");
@@ -146,6 +145,58 @@ async function validateSlot({ roomId, startAt, endAt, capacity, excludeId, instr
   }
   return { room, start, end };
 }
+
+// Public, read-only weekly schedule. Only explicitly published schedules are
+// exposed, with a deliberately small set of non-sensitive fields.
+router.get(
+  "/public",
+  asyncHandler(async (req, res) => {
+    const from = new Date(req.query.from);
+    const to = new Date(req.query.to);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) {
+      throw new HttpError(400, "A valid public schedule date range is required.");
+    }
+    if (to.getTime() - from.getTime() > 8 * 24 * 60 * 60 * 1000) {
+      throw new HttpError(400, "Public schedule requests are limited to one week.");
+    }
+    const publishedFilter = {
+      status: "published",
+      isPublished: true,
+      approvedAt: { $ne: null },
+    };
+    const [sessions, nearest] = await Promise.all([
+      ClassSession.find({
+        ...publishedFilter,
+        startAt: { $gte: from, $lt: to },
+      })
+        .populate("instructor", "name")
+        .populate("room", "name location")
+        .sort("startAt"),
+      req.query.includeNearest === "1"
+        ? ClassSession.findOne({ ...publishedFilter, startAt: { $gte: new Date() } }).sort("startAt").select("startAt")
+        : null,
+    ]);
+    res.json({
+      nearestStartAt: nearest?.startAt || null,
+      sessions: sessions.map((session) => ({
+        id: session._id,
+        title: session.title,
+        type: session.type,
+        instructor: { id: session.instructor?._id, name: session.instructor?.name || "ANINA Instructor" },
+        room: session.room ? { id: session.room._id, name: session.room.name, location: session.room.location } : null,
+        startAt: session.startAt,
+        endAt: session.endAt,
+        capacity: session.capacity,
+        acceptedCount: session.acceptedCount,
+        availableSlots: Math.max(0, session.capacity - session.acceptedCount),
+        status: "published",
+        isPublished: true,
+      })),
+    });
+  })
+);
+
+router.use(requireAuth);
 
 // GET /api/sessions?from=&to=&room=&instructor=&mine=1&status=&type=
 // Role-aware: clients never see other people's drafts.

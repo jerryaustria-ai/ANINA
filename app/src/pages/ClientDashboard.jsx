@@ -49,7 +49,11 @@ export default function ClientDashboard() {
     const id = new URLSearchParams(window.location.search).get("schedule");
     const session = id && sessions.find((item) => item.id === id);
     if (session) setSelected(session);
-  }, [sessions]);
+    else if (id && selected?.id !== id) {
+      api(`/sessions/${id}`).then(({ session: requested }) => setSelected(requested))
+        .catch((error) => toast.error(error.message));
+    }
+  }, [sessions, selected?.id]);
   useEffect(() => {
     const openRelated = (event) => {
       const id = event.detail?.relatedScheduleId;
@@ -184,10 +188,10 @@ export default function ClientDashboard() {
               ? <button className="btn" disabled>{selUnavailable === "cancelled" ? "Class Cancelled" : "Class Finished"}</button>
             : !canBook
               ? <Link className="btn clay" to="/dashboard/membership">Membership required — Subscribe</Link>
-              : <button className="btn" onClick={book} disabled={busy || !!selUnavailable || sel.seatsLeft <= 0}>
+              : <button className="btn" onClick={book} disabled={busy || !!selUnavailable}>
                   {selUnavailable === "cancelled" ? "Class Cancelled"
                     : selUnavailable === "finished" ? "Class Finished"
-                    : sel.seatsLeft <= 0 ? "Class full" : "Request a spot"}
+                    : sel.seatsLeft <= 0 ? "Join waitlist" : "Request a spot"}
                 </button>
         )}
       >

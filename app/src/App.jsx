@@ -8,6 +8,7 @@ import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { toast } from "react-toastify";
 import NotificationBell from "./components/NotificationBell.jsx";
 import Landing from "./pages/Landing.jsx";
+import PublicSchedule from "./pages/PublicSchedule.jsx";
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -77,6 +78,7 @@ export default function App() {
 
   return <Routes>
     <Route path="/" element={<Landing />} />
+    <Route path="/schedule" element={<PublicSchedule />} />
     <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
     <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <Login mode="register" />} />
     <Route path="/dashboard/*" element={<ProtectedDashboard />} />
