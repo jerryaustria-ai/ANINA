@@ -45,6 +45,19 @@ export default function ClientDashboard() {
     setMembership(mem.membership);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("schedule");
+    const session = id && sessions.find((item) => item.id === id);
+    if (session) setSelected(session);
+  }, [sessions]);
+  useEffect(() => {
+    const openRelated = (event) => {
+      const id = event.detail?.relatedScheduleId;
+      if (id) api(`/sessions/${id}`).then(({ session }) => setSelected(session)).catch((error) => toast.error(error.message));
+    };
+    window.addEventListener("anina:open-related", openRelated);
+    return () => window.removeEventListener("anina:open-related", openRelated);
+  }, []);
 
   const canBook = !!membership?.activeNow;
 

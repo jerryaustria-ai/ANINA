@@ -25,6 +25,27 @@ a { color:var(--sage-deep); }
 .app-tab.active { background:var(--paper); color:var(--ink); border-color:var(--line); }
 .app-user { display:flex; align-items:center; gap:0.6rem; font-size:0.85rem; color:var(--ink-soft); }
 .app-user img { width:30px; height:30px; border-radius:50%; object-fit:cover; }
+.notification-bell { position:relative; }
+.bell-button { position:relative; width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--line); border-radius:50%; background:var(--white); font-size:1.05rem; }
+.bell-button:hover { background:var(--paper); }
+.bell-badge { position:absolute; top:-5px; right:-7px; min-width:19px; height:19px; padding:0 5px; display:grid; place-items:center; border-radius:20px; background:#a6463c; color:#fff; font-size:0.65rem; font-weight:600; border:2px solid var(--white); }
+.notification-panel { position:absolute; top:46px; right:0; width:min(390px, calc(100vw - 2rem)); max-height:70vh; overflow:hidden; background:var(--white); border:1px solid var(--line); border-radius:10px; box-shadow:0 16px 45px rgba(34,31,26,0.2); z-index:60; }
+.notification-head { display:flex; justify-content:space-between; align-items:center; padding:0.85rem 1rem; border-bottom:1px solid var(--line); }
+.notification-head > div { display:flex; flex-direction:column; }
+.notification-head span { color:var(--ink-mute); font-size:0.72rem; }
+.notification-head button,.notification-read { border:0; background:transparent; color:var(--sage-deep); font-size:0.73rem; padding:0; }
+.notification-list { max-height:55vh; overflow:auto; }
+.notification-item { width:100%; display:flex; align-items:flex-start; gap:0.6rem; padding:0.8rem 0.9rem; text-align:left; background:var(--white); border:0; border-bottom:1px solid var(--line); color:var(--ink); }
+.notification-item:hover { background:var(--bone); }
+.notification-item.unread { background:#f0f3ec; }
+.notification-dot { flex:0 0 7px; width:7px; height:7px; border-radius:50%; background:transparent; margin-top:0.35rem; }
+.notification-item.unread .notification-dot { background:var(--clay); }
+.notification-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:0.18rem; }
+.notification-copy strong { font-size:0.82rem; }
+.notification-copy > span { color:var(--ink-soft); font-size:0.76rem; line-height:1.35; }
+.notification-copy time { color:var(--ink-mute); font-size:0.66rem; }
+.notification-read { flex:0 0 auto; margin-top:0.1rem; }
+.notification-empty { padding:2rem 1rem; text-align:center; color:var(--ink-mute); font-size:0.82rem; }
 .role-pill { font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; padding:0.15rem 0.5rem;
   border-radius:100px; background:var(--sage); color:#fff; }
 .role-pill.admin { background:var(--clay); }

@@ -26,6 +26,20 @@ export default function InstructorDashboard() {
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)).catch(() => {}); }, []);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("schedule");
+    if (id && sessions.some((session) => session.id === id)) {
+      openManage(id).catch((error) => toast.error(error.message));
+    }
+  }, [sessions]);
+  useEffect(() => {
+    const openRelated = (event) => {
+      const id = event.detail?.relatedScheduleId;
+      if (id) openManage(id).catch((error) => toast.error(error.message));
+    };
+    window.addEventListener("anina:open-related", openRelated);
+    return () => window.removeEventListener("anina:open-related", openRelated);
+  }, []);
 
   const events = sessions.map((s) => ({
     id: s.id, title: s.title, startAt: s.startAt, endAt: s.endAt, color: s.color,

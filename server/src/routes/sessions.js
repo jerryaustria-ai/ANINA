@@ -9,6 +9,7 @@ import { requireRole } from "../middleware/requireRole.js";
 import { findRoomConflict, findInstructorConflict, findClientConflict } from "../services/conflict.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { assertScheduleBookable, assertScheduleDateNotPast } from "../services/scheduleTime.js";
+import { createNotification, notifyAdmins } from "../services/notifications.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -19,6 +20,60 @@ const populate = (q) =>
 function ownsOrAdmin(req, session) {
   return req.user.role === "admin" || session.instructor._id?.toString() === req.user._id.toString() ||
     session.instructor.toString?.() === req.user._id.toString();
+}
+
+async function announceSchedule(session, actorId, action, { previousInstructorId = null, clientsOverride = null } = {}) {
+  const [instructor, activeBookings] = await Promise.all([
+    User.findById(session.instructor),
+    Booking.find({ session: session._id, status: { $in: ["pending", "accepted", "waitlisted"] } }).populate("client"),
+  ]);
+  const clients = clientsOverride || activeBookings.map((booking) => booking.client).filter(Boolean);
+  const eventKey = `schedule:${session._id}:${action}:${session.updatedAt?.getTime() || Date.now()}`;
+  const when = new Intl.DateTimeFormat("en-PH", {
+    timeZone: process.env.APP_TIMEZONE || "Asia/Manila",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(session.startAt);
+  const titles = {
+    created: ["SCHEDULE_CREATED", "Schedule Created"],
+    updated: ["SCHEDULE_UPDATED", "Schedule Updated"],
+    rescheduled: ["SCHEDULE_RESCHEDULED", "Schedule Rescheduled"],
+    cancelled: ["SCHEDULE_CANCELLED", "Schedule Cancelled"],
+    status: ["BOOKING_STATUS_CHANGED", "Class Status Changed"],
+    instructor_changed: ["INSTRUCTOR_CHANGED", "Instructor Changed"],
+  };
+  const [type, title] = titles[action] || titles.updated;
+  const message = action === "rescheduled"
+    ? `${session.title} was moved to ${when}.`
+    : action === "cancelled"
+      ? `${session.title} scheduled for ${when} was cancelled.`
+      : action === "instructor_changed"
+        ? `${session.title} is now assigned to ${instructor?.name || "a new instructor"}.`
+        : `${session.title} was ${action} for ${when}.`;
+
+  if (instructor && instructor._id.toString() !== String(actorId)) {
+    await createNotification({
+      recipient: instructor, type, title, message,
+      relatedScheduleId: session._id, relatedUserId: instructor._id, eventKey,
+    });
+  }
+  if (previousInstructorId && String(previousInstructorId) !== String(session.instructor)) {
+    const previous = await User.findById(previousInstructorId);
+    if (previous && previous._id.toString() !== String(actorId)) {
+      await createNotification({
+        recipient: previous, type: "INSTRUCTOR_CHANGED", title: "Instructor Assignment Changed",
+        message: `You are no longer assigned to ${session.title}.`,
+        relatedScheduleId: session._id, relatedUserId: previous._id, eventKey,
+      });
+    }
+  }
+  await Promise.all(clients.map((client) => createNotification({
+    recipient: client, type, title, message,
+    relatedScheduleId: session._id, relatedUserId: instructor?._id, eventKey,
+  })));
+  await notifyAdmins({
+    type, title, message, relatedScheduleId: session._id, relatedUserId: instructor?._id, eventKey,
+  }, actorId);
 }
 
 // Validate + normalise a session's time/room/capacity. Shared by create & update.
@@ -102,6 +157,7 @@ router.post(
       startAt, endAt, capacity: cap, minToRun: min,
       notes, color, status: "draft",
     });
+    await announceSchedule(session, req.user._id, "created");
     res.status(201).json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
@@ -125,6 +181,8 @@ router.patch(
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
 
     const b = req.body || {};
+    const previousInstructorId = session.instructor;
+    const previousStatus = session.status;
     const timeChanged = (b.startAt !== undefined && new Date(b.startAt).getTime() !== session.startAt.getTime()) ||
       (b.endAt !== undefined && new Date(b.endAt).getTime() !== session.endAt.getTime());
     const instructorId = req.user.role === "admin" && b.instructor ? b.instructor : session.instructor;
@@ -186,6 +244,11 @@ router.patch(
       session.status = b.status;
     }
     await session.save();
+    await announceSchedule(session, req.user._id,
+      timeChanged ? "rescheduled"
+        : b.instructor && String(previousInstructorId) !== String(session.instructor) ? "instructor_changed"
+          : b.status !== undefined && previousStatus !== session.status ? "status" : "updated",
+      { previousInstructorId });
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
@@ -203,6 +266,7 @@ router.post(
     }
     session.status = "confirmed";
     await session.save();
+    await announceSchedule(session, req.user._id, "status");
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
@@ -232,6 +296,11 @@ router.post(
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    const affectedBookings = await Booking.find({
+      session: session._id,
+      status: { $in: ["pending", "accepted", "waitlisted"] },
+    }).populate("client");
+    const affectedClients = affectedBookings.map((booking) => booking.client).filter(Boolean);
     session.status = "cancelled";
     await session.save();
     await Booking.updateMany(
@@ -240,6 +309,7 @@ router.post(
     );
     session.acceptedCount = 0;
     await session.save();
+    await announceSchedule(session, req.user._id, "cancelled", { clientsOverride: affectedClients });
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
@@ -302,6 +372,11 @@ router.put(
     const existing = await Booking.find({ session: session._id });
     const desired = new Set(clientIds);
     const existingByClient = new Map(existing.map((booking) => [booking.client.toString(), booking]));
+    const previouslyActive = new Set(existing
+      .filter((booking) => ["pending", "accepted", "waitlisted"].includes(booking.status))
+      .map((booking) => booking.client.toString()));
+    const addedIds = clientIds.filter((id) => !previouslyActive.has(id));
+    const removedIds = [...previouslyActive].filter((id) => !desired.has(id));
     const operations = [];
 
     for (const booking of existing) {
@@ -322,6 +397,51 @@ router.put(
     if (operations.length) await Booking.bulkWrite(operations, { ordered: true });
     session.acceptedCount = clientIds.length;
     await session.save();
+
+    const instructor = await User.findById(session.instructor);
+    for (const clientId of addedIds) {
+      const client = clients.find((item) => item._id.toString() === clientId);
+      const eventKey = `schedule-roster:${session._id}:${clientId}:added:${session.updatedAt.getTime()}`;
+      await createNotification({
+        recipient: client, type: "CLIENT_ADDED_TO_SCHEDULE", title: "Added to Schedule",
+        message: `You were added to ${session.title}.`,
+        relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+      });
+      if (instructor && instructor._id.toString() !== req.user._id.toString()) {
+        await createNotification({
+          recipient: instructor, type: "CLIENT_ADDED_TO_SCHEDULE", title: "Client Added",
+          message: `${client.name} was added to ${session.title}.`,
+          relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+        });
+      }
+      await notifyAdmins({
+        type: "CLIENT_ADDED_TO_SCHEDULE", title: "Client Added",
+        message: `${client.name} was added to ${session.title}.`,
+        relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+      }, req.user._id);
+    }
+    for (const clientId of removedIds) {
+      const client = await User.findById(clientId);
+      if (!client) continue;
+      const eventKey = `schedule-roster:${session._id}:${clientId}:removed:${session.updatedAt.getTime()}`;
+      await createNotification({
+        recipient: client, type: "CLIENT_REMOVED_FROM_SCHEDULE", title: "Removed from Schedule",
+        message: `You were removed from ${session.title}.`,
+        relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+      });
+      if (instructor && instructor._id.toString() !== req.user._id.toString()) {
+        await createNotification({
+          recipient: instructor, type: "CLIENT_REMOVED_FROM_SCHEDULE", title: "Client Removed",
+          message: `${client.name} was removed from ${session.title}.`,
+          relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+        });
+      }
+      await notifyAdmins({
+        type: "CLIENT_REMOVED_FROM_SCHEDULE", title: "Client Removed",
+        message: `${client.name} was removed from ${session.title}.`,
+        relatedUserId: client._id, relatedScheduleId: session._id, eventKey,
+      }, req.user._id);
+    }
 
     const bookings = await Booking.find({ session: session._id, status: "accepted" })
       .populate("client", "name email picture phone active")

@@ -5,6 +5,7 @@ import { User } from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { verifyPassword } from "../services/password.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { notifyAdmins } from "../services/notifications.js";
 
 const router = Router();
 
@@ -76,6 +77,13 @@ router.post(
         picture: payload.picture || "",
         role: isAdmin ? "admin" : "client",
       });
+      await notifyAdmins({
+        type: "NEW_USER_REGISTRATION",
+        title: "New User Registration",
+        message: `${user.name} created a ${user.role} account.`,
+        relatedUserId: user._id,
+        eventKey: `user-registration:${user._id}`,
+      }, user._id);
     } else {
       // Keep profile fresh; promote to admin if now on the allowlist.
       user.googleId = user.googleId || payload.sub;
@@ -102,6 +110,13 @@ router.post(
     if (!user) {
       const isAdmin = adminEmails().includes(email);
       user = await User.create({ email, name: email.split("@")[0], role: isAdmin ? "admin" : "client" });
+      await notifyAdmins({
+        type: "NEW_USER_REGISTRATION",
+        title: "New User Registration",
+        message: `${user.name} created a ${user.role} account.`,
+        relatedUserId: user._id,
+        eventKey: `user-registration:${user._id}`,
+      }, user._id);
     }
     res.json({ token: signToken(user), user: user.toPublic() });
   })

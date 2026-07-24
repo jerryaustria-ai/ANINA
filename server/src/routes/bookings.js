@@ -8,6 +8,7 @@ import { claimSeat, releaseSeat } from "../services/capacity.js";
 import { hasActiveMembership } from "../services/membership.js";
 import { findClientConflict } from "../services/conflict.js";
 import { assertScheduleBookable } from "../services/scheduleTime.js";
+import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 const router = Router();
@@ -15,6 +16,47 @@ router.use(requireAuth);
 
 const isOwnerInstructor = (req, session) =>
   req.user.role === "admin" || session.instructor.toString() === req.user._id.toString();
+
+async function bookingRecipients(booking, session = booking.session) {
+  const [client, instructor] = await Promise.all([
+    User.findById(booking.client),
+    User.findById(session.instructor),
+  ]);
+  return { client, instructor };
+}
+
+async function announceBooking(booking, session, actorId, action) {
+  const { client, instructor } = await bookingRecipients(booking, session);
+  const eventKey = `booking:${booking._id}:${action}:${booking.updatedAt?.getTime() || Date.now()}`;
+  const className = session.title;
+  const definitions = {
+    requested: ["SPOT_REQUEST_SUBMITTED", "Spot Request Submitted", `Your request for ${className} was submitted.`],
+    approved: ["BOOKING_APPROVED", "Booking Confirmed", `Your spot in ${className} has been confirmed.`],
+    declined: ["BOOKING_DECLINED", "Request Declined", `Your request for ${className} was declined.`],
+    cancelled: ["BOOKING_CANCELLED", "Booking Cancelled", `Your booking for ${className} was cancelled.`],
+    waitlisted: ["BOOKING_STATUS_CHANGED", "Booking Waitlisted", `Your booking for ${className} was moved to the waitlist.`],
+  };
+  const [type, title, message] = definitions[action];
+  await createNotification({
+    recipient: client, type, title, message,
+    relatedUserId: client?._id, relatedBookingId: booking._id, relatedScheduleId: session._id, eventKey,
+  });
+  if (instructor && instructor._id.toString() !== String(actorId)) {
+    await createNotification({
+      recipient: instructor,
+      type: action === "requested" ? "NEW_SPOT_REQUEST" : "BOOKING_STATUS_CHANGED",
+      title: action === "requested" ? "New Spot Request" : `Booking ${title.replace("Booking ", "")}`,
+      message: `${client?.name || "A client"} ${action === "requested" ? "requested a spot in" : `had a booking ${action} for`} ${className}.`,
+      relatedUserId: client?._id, relatedBookingId: booking._id, relatedScheduleId: session._id, eventKey,
+    });
+  }
+  await notifyAdmins({
+    type: action === "requested" ? "NEW_SPOT_REQUEST" : "BOOKING_STATUS_CHANGED",
+    title: action === "requested" ? "New Spot Request" : title,
+    message: `${client?.name || "A client"} — ${className}: ${action}.`,
+    relatedUserId: client?._id, relatedBookingId: booking._id, relatedScheduleId: session._id, eventKey,
+  }, actorId);
+}
 
 async function validateClientSlot({ clientId, session, excludeBookingId }) {
   const client = await User.findOne({ _id: clientId, role: "client", active: true });
@@ -63,6 +105,7 @@ router.post(
     } else {
       booking = await Booking.create({ session: sessionId, client: clientId, note: note || "", status: "pending" });
     }
+    await announceBooking(booking, session, req.user._id, "requested");
     res.status(201).json({ booking: booking.toPublic() });
   })
 );
@@ -103,6 +146,7 @@ router.post(
       booking.status = "accepted";
       booking.note = note;
       await booking.save();
+      await announceBooking(booking, session, req.user._id, "approved");
       await booking.populate("client", "name email picture phone");
       res.status(201).json({ booking: booking.toPublic() });
     } catch (error) {
@@ -144,10 +188,12 @@ router.post(
     if (!seat) {
       booking.status = "waitlisted";
       await booking.save();
+      await announceBooking(booking, booking.session, req.user._id, "waitlisted");
       return res.status(200).json({ booking: booking.toPublic(), waitlisted: true, reason: "class full" });
     }
     booking.status = "accepted";
     await booking.save();
+    await announceBooking(booking, booking.session, req.user._id, "approved");
     res.json({ booking: booking.toPublic(), seatsLeft: Math.max(0, seat.capacity - seat.acceptedCount) });
   })
 );
@@ -182,6 +228,7 @@ router.patch(
       if (req.body.note !== undefined) booking.note = req.body.note;
       await booking.save();
       if (wasAccepted) await releaseSeat(oldSessionId);
+      await announceBooking(booking, target, req.user._id, wasAccepted ? "approved" : "requested");
       const result = await Booking.findById(booking._id)
         .populate("client", "name email picture phone")
         .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] });
@@ -202,6 +249,7 @@ router.post(
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "declined";
     await booking.save();
+    await announceBooking(booking, booking.session, req.user._id, "declined");
     res.json({ booking: booking.toPublic() });
   })
 );
@@ -216,6 +264,7 @@ router.post(
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "waitlisted";
     await booking.save();
+    await announceBooking(booking, booking.session, req.user._id, "waitlisted");
     res.json({ booking: booking.toPublic() });
   })
 );
@@ -232,6 +281,7 @@ router.post(
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "cancelled";
     await booking.save();
+    await announceBooking(booking, booking.session, req.user._id, "cancelled");
     res.json({ booking: booking.toPublic() });
   })
 );

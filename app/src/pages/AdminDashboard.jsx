@@ -83,6 +83,19 @@ function ScheduleView() {
       .then(([roomData, userData]) => { setRooms(roomData.rooms); setUsers(userData.users); })
       .catch((e) => toast.error(e.message));
   }, []);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("schedule");
+    const session = id && sessions.find((item) => item.id === id);
+    if (session) setSel(session);
+  }, [sessions]);
+  useEffect(() => {
+    const openRelated = (event) => {
+      const id = event.detail?.relatedScheduleId;
+      if (id) api(`/sessions/${id}`).then(({ session }) => setSel(session)).catch((error) => toast.error(error.message));
+    };
+    window.addEventListener("anina:open-related", openRelated);
+    return () => window.removeEventListener("anina:open-related", openRelated);
+  }, []);
 
   const clients = users.filter((user) => user.role === "client" && user.active);
   const instructors = users.filter((user) => user.role === "instructor" && user.active);
@@ -418,6 +431,21 @@ function PeopleView() {
   const [busy, setBusy] = useState(false);
   const load = () => api("/users").then(({ users }) => setUsers(users));
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("user");
+    const user = id && users.find((item) => item.id === id);
+    if (user) setEditUser({ ...user, password: "", specialtiesText: (user.specialties || []).join(", ") });
+  }, [users]);
+  useEffect(() => {
+    const openRelated = (event) => {
+      const id = event.detail?.relatedUserId;
+      if (id) api(`/users/${id}`).then(({ user }) =>
+        setEditUser({ ...user, password: "", specialtiesText: (user.specialties || []).join(", ") })
+      ).catch((error) => toast.error(error.message));
+    };
+    window.addEventListener("anina:open-related", openRelated);
+    return () => window.removeEventListener("anina:open-related", openRelated);
+  }, []);
 
   async function setRole(id, role) {
     try { await api(`/users/${id}/role`, { method: "PATCH", body: { role } }); await load(); toast.success("User role updated."); }

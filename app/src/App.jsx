@@ -6,6 +6,7 @@ import ClientMembership from "./pages/ClientMembership.jsx";
 import InstructorDashboard from "./pages/InstructorDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { toast } from "react-toastify";
+import NotificationBell from "./components/NotificationBell.jsx";
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -27,6 +28,7 @@ function Nav() {
         ))}
       </div>
       <div className="spacer" />
+      <NotificationBell user={user} />
       <div className="app-user">
         {user.picture && <img src={user.picture} alt="" />}
         <span>{user.name}</span>
