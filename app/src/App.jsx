@@ -7,14 +7,15 @@ import InstructorDashboard from "./pages/InstructorDashboard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
 import { toast } from "react-toastify";
 import NotificationBell from "./components/NotificationBell.jsx";
+import Landing from "./pages/Landing.jsx";
 
 function Nav() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const tabs = {
-    client: [["/", "My Bookings"], ["/membership", "Membership"]],
-    instructor: [["/", "My Classes"]],
-    admin: [["/", "Studio Schedule"], ["/approvals", "Schedule Approval"], ["/audit-trail", "Audit Trail"], ["/rooms", "Rooms"], ["/people", "People"], ["/tiers", "Tiers"], ["/memberships", "Memberships"]],
+    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "Membership"]],
+    instructor: [["/dashboard", "My Classes"]],
+    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Tiers"], ["/dashboard/memberships", "Memberships"]],
   }[user.role] || [];
 
   return (
@@ -39,31 +40,46 @@ function Nav() {
   );
 }
 
-export default function App() {
-  const { user, loading } = useAuth();
-  if (loading) return <div className="spinner">Loading…</div>;
-  if (!user) return <Login />;
-
+function Dashboard() {
+  const { user } = useAuth();
   return (
     <>
       <Nav />
       <Routes>
-        {user.role === "client" && <Route path="/" element={<ClientDashboard />} />}
-        {user.role === "client" && <Route path="/membership" element={<ClientMembership />} />}
-        {user.role === "instructor" && <Route path="/" element={<InstructorDashboard />} />}
+        {user.role === "client" && <Route index element={<ClientDashboard />} />}
+        {user.role === "client" && <Route path="membership" element={<ClientMembership />} />}
+        {user.role === "instructor" && <Route index element={<InstructorDashboard />} />}
         {user.role === "admin" && (
           <>
-            <Route path="/" element={<AdminDashboard view="schedule" />} />
-            <Route path="/approvals" element={<AdminDashboard view="approvals" />} />
-            <Route path="/audit-trail" element={<AdminDashboard view="audit" />} />
-            <Route path="/rooms" element={<AdminDashboard view="rooms" />} />
-            <Route path="/people" element={<AdminDashboard view="people" />} />
-            <Route path="/tiers" element={<AdminDashboard view="tiers" />} />
-            <Route path="/memberships" element={<AdminDashboard view="memberships" />} />
+            <Route index element={<AdminDashboard view="schedule" />} />
+            <Route path="approvals" element={<AdminDashboard view="approvals" />} />
+            <Route path="audit-trail" element={<AdminDashboard view="audit" />} />
+            <Route path="rooms" element={<AdminDashboard view="rooms" />} />
+            <Route path="people" element={<AdminDashboard view="people" />} />
+            <Route path="tiers" element={<AdminDashboard view="tiers" />} />
+            <Route path="memberships" element={<AdminDashboard view="memberships" />} />
           </>
         )}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </>
   );
+}
+
+function ProtectedDashboard() {
+  const { user } = useAuth();
+  return user ? <Dashboard /> : <Navigate to="/login" replace />;
+}
+
+export default function App() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="spinner">Loading…</div>;
+
+  return <Routes>
+    <Route path="/" element={<Landing />} />
+    <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+    <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <Login mode="register" />} />
+    <Route path="/dashboard/*" element={<ProtectedDashboard />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>;
 }

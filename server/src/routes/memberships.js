@@ -63,8 +63,8 @@ router.post(
       referenceId,
       customerId: customer.id,
       tier,
-      successUrl: `${publicUrl}/membership?status=success`,
-      cancelUrl: `${publicUrl}/membership?status=cancelled`,
+      successUrl: `${publicUrl}/dashboard/membership?status=success`,
+      cancelUrl: `${publicUrl}/dashboard/membership?status=cancelled`,
     });
 
     const membership = await Membership.create({

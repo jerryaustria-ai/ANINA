@@ -16,13 +16,13 @@ function showArrival(notification) {
 
 function notificationPath(notification, role) {
   if (role === "admin" && ["SCHEDULE_SUBMITTED_FOR_APPROVAL", "SCHEDULE_RESUBMITTED"].includes(notification.type)) {
-    return `/approvals?schedule=${notification.relatedScheduleId}`;
+    return `/dashboard/approvals?schedule=${notification.relatedScheduleId}`;
   }
   if (role === "admin" && notification.relatedUserId && !notification.relatedScheduleId) {
-    return `/people?user=${notification.relatedUserId}`;
+    return `/dashboard/people?user=${notification.relatedUserId}`;
   }
-  if (notification.relatedScheduleId) return `/?schedule=${notification.relatedScheduleId}`;
-  return "/";
+  if (notification.relatedScheduleId) return `/dashboard?schedule=${notification.relatedScheduleId}`;
+  return "/dashboard";
 }
 
 export default function NotificationBell({ user }) {

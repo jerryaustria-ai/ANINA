@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GoogleLogin } from "@react-oauth/google";
 import { useAuth } from "../auth.jsx";
 import { toast } from "react-toastify";
+import { Link, useNavigate } from "react-router-dom";
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const allowDev = import.meta.env.VITE_ALLOW_DEV_LOGIN === "true";
@@ -14,8 +15,10 @@ const DEV_USERS = [
   ["Client · Bea", "client2@example.com"],
 ];
 
-export default function Login() {
+export default function Login({ mode = "login" }) {
   const { loginWithGoogle, loginWithPassword, devLogin } = useAuth();
+  const navigate = useNavigate();
+  const registering = mode === "register";
   const [form, setForm] = useState({ email: "", password: "" });
   const [busy, setBusy] = useState(false);
 
@@ -29,6 +32,7 @@ export default function Login() {
     try {
       const user = await loginWithPassword(form.email, form.password);
       toast.success(`Welcome back, ${user.name}.`);
+      navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -40,10 +44,12 @@ export default function Login() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="mark">ANINA</div>
-        <h1>Booking</h1>
-        <p>Sign in to see your personal schedule.</p>
+        <h1>{registering ? "Join ANINA" : "Booking"}</h1>
+        <p>{registering
+          ? "Register with Google, or ask the ANINA team to create your email account."
+          : "Sign in to see your personal schedule."}</p>
 
-        <form className="auth-form" onSubmit={submit}>
+        {!registering && <form className="auth-form" onSubmit={submit}>
           <div className="field">
             <label htmlFor="auth-email">Email</label>
             <input id="auth-email" type="email" autoComplete="email" value={form.email} onChange={(e) => update("email", e.target.value)} required />
@@ -53,15 +59,15 @@ export default function Login() {
             <input id="auth-password" type="password" autoComplete="current-password" value={form.password} onChange={(e) => update("password", e.target.value)} required />
           </div>
           <button className="btn auth-submit" disabled={busy}>{busy ? "Please wait…" : "Sign in"}</button>
-        </form>
+        </form>}
 
-        <div className="auth-divider"><span>or continue with Google</span></div>
+        <div className="auth-divider"><span>{registering ? "register with Google" : "or continue with Google"}</span></div>
 
         {clientId ? (
           <div style={{ display: "flex", justifyContent: "center" }}>
             <GoogleLogin
               onSuccess={(res) => loginWithGoogle(res.credential)
-                .then((user) => toast.success(`Welcome, ${user.name}.`))
+                .then((user) => { toast.success(`Welcome, ${user.name}.`); navigate("/dashboard", { replace: true }); })
                 .catch((e) => toast.error(e.message))}
               onError={() => toast.error("Google sign-in failed. Please try again.")}
             />
@@ -78,12 +84,16 @@ export default function Login() {
             {DEV_USERS.map(([label, email]) => (
               <div className="row" key={email}>
                 <button onClick={() => devLogin(email)
-                  .then((user) => toast.success(`Signed in as ${user.name}.`))
+                  .then((user) => { toast.success(`Signed in as ${user.name}.`); navigate("/dashboard", { replace: true }); })
                   .catch((e) => toast.error(e.message))}>{label}</button>
               </div>
             ))}
           </div>
         )}
+        <p className="auth-switch">{registering ? "Already have an account?" : "New to ANINA?"}{" "}
+          <Link to={registering ? "/login" : "/register"}>{registering ? "Login" : "Register"}</Link>
+        </p>
+        <Link className="auth-home" to="/">← Back to home</Link>
       </div>
     </div>
   );

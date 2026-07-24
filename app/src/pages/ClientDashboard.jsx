@@ -126,7 +126,7 @@ export default function ClientDashboard() {
       </div>
       {!canBook && (
         <div className="status-notice warning">
-          You need an active membership to book classes. <Link to="/membership">View membership plans →</Link>
+          You need an active membership to book classes. <Link to="/dashboard/membership">View membership plans →</Link>
         </div>
       )}
 
@@ -183,7 +183,7 @@ export default function ClientDashboard() {
             : selUnavailable
               ? <button className="btn" disabled>{selUnavailable === "cancelled" ? "Class Cancelled" : "Class Finished"}</button>
             : !canBook
-              ? <Link className="btn clay" to="/membership">Membership required — Subscribe</Link>
+              ? <Link className="btn clay" to="/dashboard/membership">Membership required — Subscribe</Link>
               : <button className="btn" onClick={book} disabled={busy || !!selUnavailable || sel.seatsLeft <= 0}>
                   {selUnavailable === "cancelled" ? "Class Cancelled"
                     : selUnavailable === "finished" ? "Class Finished"
