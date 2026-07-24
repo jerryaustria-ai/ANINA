@@ -9,6 +9,7 @@ import { hasActiveMembership } from "../services/membership.js";
 import { findClientConflict } from "../services/conflict.js";
 import { assertScheduleBookable } from "../services/scheduleTime.js";
 import { createNotification, notifyAdmins } from "../services/notifications.js";
+import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 const router = Router();
@@ -16,6 +17,25 @@ router.use(requireAuth);
 
 const isOwnerInstructor = (req, session) =>
   req.user.role === "admin" || session.instructor.toString() === req.user._id.toString();
+
+async function recordBookingAudit({ booking, session, actor, action, description, previousValue = null }) {
+  const classSession = session?._id ? session : await ClassSession.findById(session);
+  await createAuditLog({
+    actor,
+    action,
+    description,
+    entityType: "booking",
+    entityId: booking._id,
+    entityLabel: `${classSession?.title || "Booking"} — ${booking._id}`,
+    previousValue,
+    updatedValue: booking,
+    metadata: {
+      scheduleId: classSession?._id,
+      scheduleTitle: classSession?.title,
+      clientId: booking.client,
+    },
+  });
+}
 
 async function bookingRecipients(booking, session = booking.session) {
   const [client, instructor] = await Promise.all([
@@ -98,6 +118,7 @@ router.post(
     }
 
     let booking;
+    const previous = existing?.toObject({ depopulate: true }) || null;
     if (existing) {
       existing.status = "pending";
       existing.note = note || "";
@@ -105,6 +126,12 @@ router.post(
     } else {
       booking = await Booking.create({ session: sessionId, client: clientId, note: note || "", status: "pending" });
     }
+    await recordBookingAudit({
+      booking, session, actor: req.user,
+      action: existing ? "BOOKING_REBOOKED" : "BOOKING_CREATED",
+      description: `${req.user.name} ${existing ? "rebooked" : "created"} a booking request for ${session.title}.`,
+      previousValue: previous,
+    });
     await announceBooking(booking, session, req.user._id, "requested");
     res.status(201).json({ booking: booking.toPublic() });
   })
@@ -142,10 +169,16 @@ router.post(
     const seat = await claimSeat(session._id);
     if (!seat) throw new HttpError(409, "This schedule is already full");
     try {
+      const previous = existing?.toObject({ depopulate: true }) || null;
       const booking = existing || new Booking({ session: sessionId, client: clientId });
       booking.status = "accepted";
       booking.note = note;
       await booking.save();
+      await recordBookingAudit({
+        booking, session, actor: req.user, action: "BOOKING_CREATED",
+        description: `Assigned a client to ${session.title}.`,
+        previousValue: previous,
+      });
       await announceBooking(booking, session, req.user._id, "approved");
       await booking.populate("client", "name email picture phone");
       res.status(201).json({ booking: booking.toPublic() });
@@ -183,16 +216,27 @@ router.post(
     const booking = await loadForDecision(req);
     assertScheduleBookable(booking.session);
     if (booking.status === "accepted") return res.json({ booking: booking.toPublic() });
+    const previous = booking.toObject({ depopulate: true });
 
     const seat = await claimSeat(booking.session._id);
     if (!seat) {
       booking.status = "waitlisted";
       await booking.save();
+      await recordBookingAudit({
+        booking, session: booking.session, actor: req.user, action: "BOOKING_WAITLISTED",
+        description: `Moved booking to the waitlist for ${booking.session.title}.`,
+        previousValue: previous,
+      });
       await announceBooking(booking, booking.session, req.user._id, "waitlisted");
       return res.status(200).json({ booking: booking.toPublic(), waitlisted: true, reason: "class full" });
     }
     booking.status = "accepted";
     await booking.save();
+    await recordBookingAudit({
+      booking, session: booking.session, actor: req.user, action: "BOOKING_APPROVED",
+      description: `Approved booking for ${booking.session.title}.`,
+      previousValue: previous,
+    });
     await announceBooking(booking, booking.session, req.user._id, "approved");
     res.json({ booking: booking.toPublic(), seatsLeft: Math.max(0, seat.capacity - seat.acceptedCount) });
   })
@@ -208,6 +252,8 @@ router.patch(
     const targetId = req.body?.sessionId;
     if (!targetId) throw new HttpError(400, "sessionId is required");
     if (targetId === booking.session._id.toString()) return res.json({ booking: booking.toPublic() });
+    const previous = booking.toObject({ depopulate: true });
+    const previousSessionTitle = booking.session.title;
 
     const target = await ClassSession.findById(targetId);
     if (!target) throw new HttpError(404, "Target schedule not found");
@@ -227,6 +273,11 @@ router.patch(
       booking.status = wasAccepted ? "accepted" : "pending";
       if (req.body.note !== undefined) booking.note = req.body.note;
       await booking.save();
+      await recordBookingAudit({
+        booking, session: target, actor: req.user, action: "BOOKING_RESCHEDULED",
+        description: `Rescheduled a booking from ${previousSessionTitle} to ${target.title}.`,
+        previousValue: previous,
+      });
       if (wasAccepted) await releaseSeat(oldSessionId);
       await announceBooking(booking, target, req.user._id, wasAccepted ? "approved" : "requested");
       const result = await Booking.findById(booking._id)
@@ -246,9 +297,15 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
+    const previous = booking.toObject({ depopulate: true });
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "declined";
     await booking.save();
+    await recordBookingAudit({
+      booking, session: booking.session, actor: req.user, action: "BOOKING_DECLINED",
+      description: `Declined booking for ${booking.session.title}.`,
+      previousValue: previous,
+    });
     await announceBooking(booking, booking.session, req.user._id, "declined");
     res.json({ booking: booking.toPublic() });
   })
@@ -261,9 +318,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
     assertScheduleBookable(booking.session);
+    const previous = booking.toObject({ depopulate: true });
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "waitlisted";
     await booking.save();
+    await recordBookingAudit({
+      booking, session: booking.session, actor: req.user, action: "BOOKING_WAITLISTED",
+      description: `Moved booking to the waitlist for ${booking.session.title}.`,
+      previousValue: previous,
+    });
     await announceBooking(booking, booking.session, req.user._id, "waitlisted");
     res.json({ booking: booking.toPublic() });
   })
@@ -277,10 +340,16 @@ router.post(
     if (!booking) throw new HttpError(404, "Booking not found");
     const isOwnerClient = booking.client.toString() === req.user._id.toString();
     if (!isOwnerClient && req.user.role !== "admin") throw new HttpError(403, "Not your booking");
+    const previous = booking.toObject({ depopulate: true });
 
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "cancelled";
     await booking.save();
+    await recordBookingAudit({
+      booking, session: booking.session, actor: req.user, action: "BOOKING_CANCELLED",
+      description: `Cancelled booking for ${booking.session.title}.`,
+      previousValue: previous,
+    });
     await announceBooking(booking, booking.session, req.user._id, "cancelled");
     res.json({ booking: booking.toPublic() });
   })

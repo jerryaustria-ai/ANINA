@@ -12,6 +12,7 @@ import { assertScheduleBookable, assertScheduleDateNotPast } from "../services/s
 import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { Notification } from "../models/Notification.js";
 import { SessionAudit } from "../models/SessionAudit.js";
+import { createAuditLog } from "../services/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -29,7 +30,7 @@ function activeClientQuery(sessionId) {
   };
 }
 
-async function recordScheduleAudit(session, action, actor, dbSession = null) {
+async function recordScheduleAudit(session, action, actor, dbSession = null, previousValue = null) {
   await SessionAudit.create([{
     sessionId: session._id,
     action,
@@ -38,6 +39,25 @@ async function recordScheduleAudit(session, action, actor, dbSession = null) {
     sessionSnapshot: session.toObject({ depopulate: true }),
     bookingSnapshots: [],
   }], dbSession ? { session: dbSession } : undefined);
+  const descriptions = {
+    SUBMITTED: `Submitted ${session.title} for Admin approval.`,
+    RESUBMITTED: `Resubmitted ${session.title} for Admin approval.`,
+    APPROVED: `Approved and published ${session.title}.`,
+    REJECTED: `Rejected ${session.title}.`,
+    CHANGES_REQUESTED: `Requested changes to ${session.title}.`,
+    PERMANENTLY_DELETED: `Permanently deleted ${session.title}.`,
+  };
+  await createAuditLog({
+    actor,
+    action: `SCHEDULE_${action}`,
+    description: descriptions[action] || `${action} ${session.title}.`,
+    entityType: "schedule",
+    entityId: session._id,
+    entityLabel: session.title,
+    previousValue,
+    updatedValue: action === "PERMANENTLY_DELETED" ? null : session,
+    dbSession,
+  });
 }
 
 function ownsOrAdmin(req, session) {
@@ -186,6 +206,12 @@ router.post(
       approvedBy: instructorSubmission ? null : req.user._id,
       approvedAt: instructorSubmission ? null : now,
     });
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_CREATED",
+      description: `Created ${session.title}${instructorSubmission ? " and submitted it for Admin approval" : ""}.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      updatedValue: session,
+    });
     await recordScheduleAudit(session, instructorSubmission ? "SUBMITTED" : "APPROVED", req.user);
     if (instructorSubmission) {
       await notifyAdmins({
@@ -222,6 +248,7 @@ async function reviewSchedule(req, status, details = {}) {
   if (session.status !== "pending_approval") {
     throw new HttpError(409, "This schedule is not awaiting Admin review.");
   }
+  const previous = session.toObject({ depopulate: true });
   const instructor = await User.findById(session.instructor);
   const now = new Date();
   session.status = status;
@@ -239,7 +266,7 @@ async function reviewSchedule(req, status, details = {}) {
     rejected: ["REJECTED", "SCHEDULE_REJECTED", "Schedule Rejected", `${session.title} was rejected: ${details.reason}`],
     changes_requested: ["CHANGES_REQUESTED", "SCHEDULE_CHANGES_REQUESTED", "Changes Requested", `Changes were requested for ${session.title}: ${details.notes}`],
   }[status];
-  await recordScheduleAudit(session, config[0], req.user);
+  await recordScheduleAudit(session, config[0], req.user, null, previous);
   await createNotification({
     recipient: instructor,
     type: config[1],
@@ -293,13 +320,14 @@ router.post(
     if (!["rejected", "changes_requested"].includes(session.status)) {
       throw new HttpError(409, "Only rejected schedules or schedules with requested changes can be resubmitted.");
     }
+    const previous = session.toObject({ depopulate: true });
     session.status = "pending_approval";
     session.isPublished = false;
     session.submittedAt = new Date();
     session.rejectionReason = "";
     session.changeRequestNotes = "";
     await session.save();
-    await recordScheduleAudit(session, "RESUBMITTED", req.user);
+    await recordScheduleAudit(session, "RESUBMITTED", req.user, null, previous);
     await notifyAdmins({
       type: "SCHEDULE_RESUBMITTED",
       title: "Schedule Resubmitted",
@@ -337,6 +365,7 @@ router.patch(
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    const previous = session.toObject({ depopulate: true });
 
     const b = req.body || {};
     const previousInstructorId = session.instructor;
@@ -416,7 +445,7 @@ router.patch(
     await session.save();
     if (req.user.role === "instructor") {
       const auditAction = ["rejected", "changes_requested"].includes(previousStatus) ? "RESUBMITTED" : "SUBMITTED";
-      await recordScheduleAudit(session, auditAction, req.user);
+      await recordScheduleAudit(session, auditAction, req.user, null, previous);
       await notifyAdmins({
         type: auditAction === "RESUBMITTED" ? "SCHEDULE_RESUBMITTED" : "SCHEDULE_SUBMITTED_FOR_APPROVAL",
         title: auditAction === "RESUBMITTED" ? "Schedule Resubmitted" : "Schedule Revision Awaiting Approval",
@@ -426,6 +455,13 @@ router.patch(
         eventKey: `schedule-edit-submitted:${session._id}:${session.submittedAt.getTime()}`,
       });
     } else {
+      await createAuditLog({
+        actor: req.user,
+        action: timeChanged ? "SCHEDULE_RESCHEDULED" : "SCHEDULE_UPDATED",
+        description: `${timeChanged ? "Rescheduled" : "Updated"} ${session.title}.`,
+        entityType: "schedule", entityId: session._id, entityLabel: session.title,
+        previousValue: previous, updatedValue: session,
+      });
       await announceSchedule(session, req.user._id,
         timeChanged ? "rescheduled"
           : b.instructor && String(previousInstructorId) !== String(session.instructor) ? "instructor_changed"
@@ -444,12 +480,19 @@ router.post(
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    const previous = session.toObject({ depopulate: true });
     if (session.acceptedCount < session.minToRun) {
       throw new HttpError(400, `Need ${session.minToRun} accepted, have ${session.acceptedCount}`);
     }
     session.status = "published";
     session.isPublished = true;
     await session.save();
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_CONFIRMED",
+      description: `Confirmed ${session.title} as running.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: previous, updatedValue: session,
+    });
     await announceSchedule(session, req.user._id, "status");
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
@@ -524,6 +567,13 @@ router.delete(
           sessionSnapshot: classSession.toObject({ depopulate: true }),
           bookingSnapshots,
         }], { session: transaction });
+        await createAuditLog({
+          actor: req.user, action: "SCHEDULE_PERMANENTLY_DELETED",
+          description: `Permanently deleted ${classSession.title}.`,
+          entityType: "schedule", entityId: classSession._id, entityLabel: classSession.title,
+          previousValue: classSession, metadata: { bookingSnapshots },
+          dbSession: transaction,
+        });
 
         // Inactive linked bookings are preserved in the audit snapshot, then
         // removed to avoid orphan references. Users/instructors/rooms remain.
@@ -554,6 +604,7 @@ router.post(
     if (session.status === "cancelled") {
       throw new HttpError(409, "This session has already been cancelled.");
     }
+    const previous = session.toObject({ depopulate: true });
     const affectedBookings = await Booking.find({
       session: session._id,
       status: { $in: ["pending", "accepted", "waitlisted"] },
@@ -571,6 +622,13 @@ router.post(
     );
     session.acceptedCount = 0;
     await session.save();
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_CANCELLED",
+      description: `Cancelled ${session.title}.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: previous, updatedValue: session,
+      metadata: { affectedBookingCount: affectedBookings.length },
+    });
     await announceSchedule(session, req.user._id, "cancelled", { clientsOverride: affectedClients });
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
@@ -632,6 +690,7 @@ router.put(
     }
 
     const existing = await Booking.find({ session: session._id });
+    const previousRoster = existing.map((booking) => booking.toObject({ depopulate: true }));
     const desired = new Set(clientIds);
     const existingByClient = new Map(existing.map((booking) => [booking.client.toString(), booking]));
     const previouslyActive = new Set(existing
@@ -659,6 +718,14 @@ router.put(
     if (operations.length) await Booking.bulkWrite(operations, { ordered: true });
     session.acceptedCount = clientIds.length;
     await session.save();
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_CLIENTS_UPDATED",
+      description: `Updated client assignments for ${session.title}: ${addedIds.length} added, ${removedIds.length} removed.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: { bookings: previousRoster },
+      updatedValue: { clientIds, acceptedCount: clientIds.length },
+      metadata: { addedIds, removedIds },
+    });
 
     const instructor = await User.findById(session.instructor);
     for (const clientId of addedIds) {
@@ -724,6 +791,7 @@ router.post(
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    const previous = session.toObject({ depopulate: true });
     if (!["cancelled", "completed"].includes(session.status)) {
       session.status = "published";
       session.isPublished = true;
@@ -731,6 +799,12 @@ router.post(
       session.approvedAt = new Date();
     }
     await session.save();
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_PUBLISHED",
+      description: `Published ${session.title}.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: previous, updatedValue: session,
+    });
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );

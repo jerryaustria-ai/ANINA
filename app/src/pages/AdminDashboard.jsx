@@ -10,10 +10,116 @@ import { toast } from "react-toastify";
 export default function AdminDashboard({ view }) {
   if (view === "rooms") return <RoomsView />;
   if (view === "approvals") return <ScheduleApprovalView />;
+  if (view === "audit") return <AuditTrailView />;
   if (view === "people") return <PeopleView />;
   if (view === "tiers") return <TiersView />;
   if (view === "memberships") return <MembershipsView />;
   return <ScheduleView />;
+}
+
+/* ---------- Read-only system audit trail ---------- */
+const blankAuditFilters = { from: "", to: "", user: "", role: "", action: "", reference: "" };
+
+function AuditTrailView() {
+  const [logs, setLogs] = useState([]);
+  const [actions, setActions] = useState([]);
+  const [filters, setFilters] = useState(blankAuditFilters);
+  const [applied, setApplied] = useState(blankAuditFilters);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setBusy(true);
+    try {
+      const query = new URLSearchParams({ page: String(page), limit: "50" });
+      Object.entries(applied).forEach(([key, value]) => value && query.set(key, value));
+      const data = await api(`/audit-logs?${query}`);
+      setLogs(data.logs);
+      setActions(data.actions);
+      setPages(data.pages);
+      setTotal(data.total);
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+  useEffect(() => { load(); }, [applied, page]);
+
+  function applyFilters(event) {
+    event.preventDefault();
+    setPage(1);
+    setApplied({ ...filters });
+  }
+
+  function clearFilters() {
+    setFilters(blankAuditFilters);
+    setPage(1);
+    setApplied(blankAuditFilters);
+  }
+
+  const labelAction = (action) => action.toLowerCase().replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const snapshot = (value) => value && Object.keys(value).length
+    ? JSON.stringify(value, null, 2)
+    : "Not applicable";
+
+  return <div className="page audit-page">
+    <div className="page-head"><div><h1>Audit Trail</h1>
+      <p>Read-only history of important system activity. Newest activity appears first.</p></div></div>
+
+    <form className="audit-filters" onSubmit={applyFilters}>
+      <div className="field"><label>From</label><input type="date" value={filters.from}
+        onChange={(event) => setFilters({ ...filters, from: event.target.value })} /></div>
+      <div className="field"><label>To</label><input type="date" value={filters.to}
+        onChange={(event) => setFilters({ ...filters, to: event.target.value })} /></div>
+      <div className="field"><label>User name</label><input value={filters.user} placeholder="Search user"
+        onChange={(event) => setFilters({ ...filters, user: event.target.value })} /></div>
+      <div className="field"><label>User role</label><select value={filters.role}
+        onChange={(event) => setFilters({ ...filters, role: event.target.value })}>
+        <option value="">All roles</option><option value="admin">Admin</option>
+        <option value="instructor">Instructor</option><option value="client">Client</option>
+      </select></div>
+      <div className="field"><label>Action type</label><select value={filters.action}
+        onChange={(event) => setFilters({ ...filters, action: event.target.value })}>
+        <option value="">All actions</option>{actions.map((action) =>
+          <option value={action} key={action}>{labelAction(action)}</option>)}
+      </select></div>
+      <div className="field"><label>Schedule / booking reference</label>
+        <input value={filters.reference} placeholder="Name or record ID"
+          onChange={(event) => setFilters({ ...filters, reference: event.target.value })} /></div>
+      <div className="audit-filter-actions">
+        <button className="btn" type="submit">Apply filters</button>
+        <button className="btn ghost" type="button" onClick={clearFilters}>Clear</button>
+      </div>
+    </form>
+
+    <div className="audit-summary">{busy ? "Loading activity…" : `${total} audit record${total === 1 ? "" : "s"}`}</div>
+    {!busy && !logs.length ? <div className="empty">No audit records match these filters.</div> :
+      <div className="audit-list">{logs.map((log) => <article className="audit-entry" key={log.id}>
+        <div className="audit-entry-head">
+          <div><span className="status-tag">{labelAction(log.action)}</span>
+            <strong>{log.entityLabel}</strong></div>
+          <time>{new Date(log.createdAt).toLocaleString()}</time>
+        </div>
+        <p>{log.description}</p>
+        <div className="audit-meta">
+          <span>Performed by <strong>{log.actorName}</strong></span>
+          <span className="role-badge">{log.actorRole}</span>
+          <span>Affected {log.entityType}: <code>{log.entityId}</code></span>
+        </div>
+        {(log.previousValue || log.updatedValue) && <details className="audit-changes">
+          <summary>View previous and updated values</summary>
+          <div><section><h4>Previous value</h4><pre>{snapshot(log.previousValue)}</pre></section>
+            <section><h4>Updated value</h4><pre>{snapshot(log.updatedValue)}</pre></section></div>
+        </details>}
+      </article>)}</div>}
+
+    {pages > 1 && <div className="audit-pagination">
+      <button className="btn ghost sm" disabled={page <= 1 || busy} onClick={() => setPage(page - 1)}>Previous</button>
+      <span>Page {page} of {pages}</span>
+      <button className="btn ghost sm" disabled={page >= pages || busy} onClick={() => setPage(page + 1)}>Next</button>
+    </div>}
+  </div>;
 }
 
 function ClientMultiSelect({ clients, value, onChange, capacity }) {

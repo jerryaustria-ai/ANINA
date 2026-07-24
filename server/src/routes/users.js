@@ -5,6 +5,7 @@ import { Booking } from "../models/Booking.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { hashPassword } from "../services/password.js";
+import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 const router = Router();
@@ -62,6 +63,12 @@ router.post(
       picture,
       passwordHash: await hashPassword(password),
     });
+    await createAuditLog({
+      actor: req.user, action: "USER_CREATED",
+      description: `Created ${user.role} account for ${user.name}.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      updatedValue: user,
+    });
     res.status(201).json({ user: user.toPublic() });
   })
 );
@@ -84,6 +91,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const user = await User.findById(req.params.id).select("+passwordHash");
     if (!user) throw new HttpError(404, "User not found");
+    const previous = user.toObject({ depopulate: true });
 
     const body = req.body || {};
     if (body.email !== undefined) {
@@ -120,6 +128,12 @@ router.patch(
     }
 
     await user.save();
+    await createAuditLog({
+      actor: req.user, action: "USER_UPDATED",
+      description: `Updated account information for ${user.name}.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: previous, updatedValue: user,
+    });
     res.json({ user: user.toPublic() });
   })
 );
@@ -136,8 +150,15 @@ router.patch(
     if (user._id.toString() === req.user._id.toString() && role !== "admin") {
       throw new HttpError(400, "You can't demote yourself");
     }
+    const previousRole = user.role;
     user.role = role;
     await user.save();
+    await createAuditLog({
+      actor: req.user, action: "USER_ROLE_CHANGED",
+      description: `Changed ${user.name}'s role from ${previousRole} to ${role}.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: { role: previousRole }, updatedValue: { role },
+    });
     res.json({ user: user.toPublic() });
   })
 );
@@ -152,8 +173,15 @@ router.patch(
     if (user._id.toString() === req.user._id.toString() && !req.body.active) {
       throw new HttpError(400, "You can't deactivate yourself");
     }
+    const previousActive = user.active;
     user.active = !!req.body.active;
     await user.save();
+    await createAuditLog({
+      actor: req.user, action: user.active ? "USER_ACTIVATED" : "USER_DEACTIVATED",
+      description: `${user.active ? "Activated" : "Deactivated"} ${user.name}'s account.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: { active: previousActive }, updatedValue: { active: user.active },
+    });
     res.json({ user: user.toPublic() });
   })
 );
@@ -220,6 +248,13 @@ router.delete(
     if (sessions || bookings) {
       throw new HttpError(409, "This user has existing classes or bookings and cannot be deleted. Please deactivate the user instead.");
     }
+    const snapshot = user.toObject({ depopulate: true });
+    await createAuditLog({
+      actor: req.user, action: "USER_DELETED",
+      description: `Permanently deleted ${user.name}'s account.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: snapshot,
+    });
     await user.deleteOne();
     res.json({ ok: true, deleted: true });
   })
@@ -229,11 +264,18 @@ router.delete(
 router.patch(
   "/me",
   asyncHandler(async (req, res) => {
+    const previous = req.user.toObject({ depopulate: true });
     const { phone, bio, specialties } = req.body || {};
     if (phone !== undefined) req.user.phone = phone;
     if (bio !== undefined) req.user.bio = bio;
     if (specialties !== undefined) req.user.specialties = specialties;
     await req.user.save();
+    await createAuditLog({
+      actor: req.user, action: "PROFILE_UPDATED",
+      description: `${req.user.name} updated their profile.`,
+      entityType: "user", entityId: req.user._id, entityLabel: req.user.name,
+      previousValue: previous, updatedValue: req.user,
+    });
     res.json({ user: req.user.toPublic() });
   })
 );
