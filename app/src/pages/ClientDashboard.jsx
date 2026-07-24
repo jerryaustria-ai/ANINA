@@ -8,6 +8,22 @@ import { useCalendar } from "../useCalendar.js";
 import { fmtRange, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
+function localDateKey(value) {
+  const date = new Date(value);
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function unavailableReason(session) {
+  if (!session) return null;
+  const status = String(session.status || "").toLowerCase();
+  if (status === "cancelled") return "cancelled";
+  if (["completed", "finished"].includes(status) ||
+      new Date(session.endAt) <= new Date() ||
+      localDateKey(session.startAt) < localDateKey(new Date())) return "finished";
+  return null;
+}
+
 export default function ClientDashboard() {
   const cal = useCalendar();
   const [sessions, setSessions] = useState([]);
@@ -42,25 +58,32 @@ export default function ClientDashboard() {
   const events = sessions.map((s) => {
     const b = myStatus[s.id];
     const active = b && !["cancelled", "declined"].includes(b.status);
+    const unavailable = unavailableReason(s);
     return {
       id: s.id, title: s.title, startAt: s.startAt, endAt: s.endAt, color: s.color,
       sub: `${s.instructor?.name || ""} · ${s.room?.name || ""}`,
-      badge: active ? "✓ " + STATUS_LABEL[b.status] : (s.seatsLeft > 0 ? `${s.seatsLeft} left` : "Full"),
-      dim: active ? false : s.seatsLeft <= 0,
+      badge: unavailable === "cancelled" ? "Cancelled" : unavailable === "finished" ? "Finished"
+        : active ? "✓ " + STATUS_LABEL[b.status] : (s.seatsLeft > 0 ? `${s.seatsLeft} left` : "Full"),
+      dim: !!unavailable || (!active && s.seatsLeft <= 0),
     };
   });
 
   const sel = selected;
   const selBooking = sel ? myStatus[sel.id] : null;
   const selActive = selBooking && !["cancelled", "declined"].includes(selBooking.status);
+  const selUnavailable = unavailableReason(sel);
 
   async function book() {
+    if (selUnavailable) {
+      toast.warning("This class is no longer available for booking.");
+      return;
+    }
     setBusy(true);
     try {
       await api("/bookings", { method: "POST", body: { sessionId: sel.id } });
       toast.success(`Requested a spot in "${sel.title}". Your instructor will confirm.`);
       setSelected(null); await load();
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { e.status === 410 ? toast.warning("This class is no longer available for booking.") : toast.error(e.message); }
     finally { setBusy(false); }
   }
   async function cancel() {
@@ -74,8 +97,14 @@ export default function ClientDashboard() {
   }
 
   const upcoming = mine
-    .filter((b) => b.session && !["cancelled", "declined"].includes(b.status) && new Date(b.session.startAt) >= new Date())
+    .filter((b) => b.session && !["cancelled", "declined"].includes(b.status) && !unavailableReason(b.session))
     .sort((a, b) => new Date(a.session.startAt) - new Date(b.session.startAt));
+  const history = mine
+    .filter((booking) => booking.session && (
+      unavailableReason(booking.session) ||
+      ["cancelled", "declined", "attended", "no_show"].includes(booking.status)
+    ))
+    .sort((a, b) => new Date(b.session.endAt) - new Date(a.session.endAt));
 
   return (
     <div className="page">
@@ -115,6 +144,22 @@ export default function ClientDashboard() {
         </div>
       )}
 
+      <h2 style={{ margin: "1.6rem 0 0.8rem", fontWeight: 300 }}>Booking history</h2>
+      {history.length === 0 ? <div className="empty">No booking history yet.</div> : (
+        <div className="grid-cards">
+          {history.map((booking) => (
+            <div className="card unavailable-card" key={booking.id}>
+              <h3>{booking.session.title}</h3>
+              <div className="sub">{fmtRange(booking.session.startAt, booking.session.endAt)}</div>
+              <div className="sub">{booking.session.instructor?.name} · {booking.session.room?.name}</div>
+              <span className={"status-tag " + (booking.session.status === "cancelled" ? "cancelled" : booking.status)}>
+                {booking.session.status === "cancelled" ? "Class Cancelled" : STATUS_LABEL[booking.session.status] || STATUS_LABEL[booking.status] || booking.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <Modal
         open={!!sel}
         onClose={() => setSelected(null)}
@@ -122,10 +167,14 @@ export default function ClientDashboard() {
         footer={sel && (
           selActive
             ? <button className="btn danger" onClick={cancel} disabled={busy}>Cancel booking</button>
+            : selUnavailable
+              ? <button className="btn" disabled>{selUnavailable === "cancelled" ? "Class Cancelled" : "Class Finished"}</button>
             : !canBook
               ? <Link className="btn clay" to="/membership">Membership required — Subscribe</Link>
-              : <button className="btn" onClick={book} disabled={busy || sel.seatsLeft <= 0}>
-                  {sel.seatsLeft <= 0 ? "Class full" : "Request a spot"}
+              : <button className="btn" onClick={book} disabled={busy || !!selUnavailable || sel.seatsLeft <= 0}>
+                  {selUnavailable === "cancelled" ? "Class Cancelled"
+                    : selUnavailable === "finished" ? "Class Finished"
+                    : sel.seatsLeft <= 0 ? "Class full" : "Request a spot"}
                 </button>
         )}
       >

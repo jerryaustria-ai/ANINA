@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { findRoomConflict, findInstructorConflict, findClientConflict } from "../services/conflict.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { assertScheduleBookable, assertScheduleDateNotPast } from "../services/scheduleTime.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -20,33 +21,13 @@ function ownsOrAdmin(req, session) {
     session.instructor.toString?.() === req.user._id.toString();
 }
 
-const PAST_DATE_MESSAGE = "Schedules cannot be created for past dates. Please select today or a future date.";
-const APP_TIMEZONE = process.env.APP_TIMEZONE || process.env.TZ || "Asia/Manila";
-
-function dateKeyInTimezone(date, timeZone = APP_TIMEZONE) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${value.year}-${value.month}-${value.day}`;
-}
-
-function validateNotPastDate(date) {
-  if (dateKeyInTimezone(date) < dateKeyInTimezone(new Date())) {
-    throw new HttpError(400, PAST_DATE_MESSAGE);
-  }
-}
-
 // Validate + normalise a session's time/room/capacity. Shared by create & update.
 async function validateSlot({ roomId, startAt, endAt, capacity, excludeId, instructorId, enforceNotPast = false }) {
   const start = new Date(startAt);
   const end = new Date(endAt);
   if (isNaN(start) || isNaN(end)) throw new HttpError(400, "Invalid start/end time");
   if (end <= start) throw new HttpError(400, "End time must be after start time");
-  if (enforceNotPast) validateNotPastDate(start);
+  if (enforceNotPast) assertScheduleDateNotPast(start);
 
   const instructor = await User.findOne({ _id: instructorId, role: "instructor", active: true });
   if (!instructor) throw new HttpError(400, "Assigned instructor was not found or is inactive");
@@ -88,7 +69,9 @@ router.get(
 
     // Clients only ever see published classes (open/confirmed), never drafts.
     if (req.user.role === "client") {
-      filter.status = filter.status && filter.status !== "draft" ? filter.status : { $in: ["open", "confirmed", "rescheduled"] };
+      filter.status = filter.status && filter.status !== "draft"
+        ? filter.status
+        : { $in: ["open", "confirmed", "rescheduled", "completed", "cancelled"] };
     }
 
     const sessions = await populate(ClassSession.find(filter).sort("startAt"));
@@ -285,6 +268,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
+    assertScheduleBookable(session);
     if (["cancelled", "completed"].includes(session.status)) {
       throw new HttpError(400, "Clients cannot be changed on a cancelled or completed schedule");
     }

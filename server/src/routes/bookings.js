@@ -7,6 +7,7 @@ import { requireRole } from "../middleware/requireRole.js";
 import { claimSeat, releaseSeat } from "../services/capacity.js";
 import { hasActiveMembership } from "../services/membership.js";
 import { findClientConflict } from "../services/conflict.js";
+import { assertScheduleBookable } from "../services/scheduleTime.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 
 const router = Router();
@@ -38,17 +39,14 @@ router.post(
   asyncHandler(async (req, res) => {
     const { sessionId, note } = req.body || {};
 
+    const session = await ClassSession.findById(sessionId);
+    if (!session) throw new HttpError(404, "Session not found");
+    assertScheduleBookable(session);
+
     // Gate: clients must hold an active membership to book. (Admin exempt.)
     if (req.user.role === "client" && !(await hasActiveMembership(req.user._id))) {
       throw new HttpError(402, "An active membership is required to book classes");
     }
-
-    const session = await ClassSession.findById(sessionId);
-    if (!session) throw new HttpError(404, "Session not found");
-    if (!["open", "confirmed", "rescheduled"].includes(session.status)) {
-      throw new HttpError(400, "This class is not open for booking");
-    }
-    if (new Date(session.startAt) < new Date()) throw new HttpError(400, "That class has already started");
 
     const clientId = req.user.role === "admin" && req.body.clientId ? req.body.clientId : req.user._id;
     await validateClientSlot({ clientId, session });
@@ -91,10 +89,7 @@ router.post(
     if (!sessionId || !clientId) throw new HttpError(400, "sessionId and clientId are required");
     const session = await ClassSession.findById(sessionId);
     if (!session) throw new HttpError(404, "Session not found");
-    if (!["open", "confirmed", "rescheduled"].includes(session.status)) {
-      throw new HttpError(400, "Selected schedule is not available for booking");
-    }
-    if (session.startAt < new Date()) throw new HttpError(400, "Selected schedule has already started");
+    assertScheduleBookable(session);
     await validateClientSlot({ clientId, session });
     const existing = await Booking.findOne({ session: sessionId, client: clientId });
     if (existing && !["cancelled", "declined"].includes(existing.status)) {
@@ -142,6 +137,7 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
+    assertScheduleBookable(booking.session);
     if (booking.status === "accepted") return res.json({ booking: booking.toPublic() });
 
     const seat = await claimSeat(booking.session._id);
@@ -169,9 +165,7 @@ router.patch(
 
     const target = await ClassSession.findById(targetId);
     if (!target) throw new HttpError(404, "Target schedule not found");
-    if (!["open", "confirmed", "rescheduled"].includes(target.status) || target.startAt < new Date()) {
-      throw new HttpError(400, "Target schedule is not available");
-    }
+    assertScheduleBookable(target);
     await validateClientSlot({ clientId: booking.client, session: target, excludeBookingId: booking._id });
     const duplicate = await Booking.findOne({ session: target._id, client: booking.client, _id: { $ne: booking._id } });
     if (duplicate) throw new HttpError(409, "Client already has a booking record for the target schedule");
@@ -218,6 +212,7 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
+    assertScheduleBookable(booking.session);
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
     booking.status = "waitlisted";
     await booking.save();
