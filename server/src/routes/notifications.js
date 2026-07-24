@@ -15,7 +15,8 @@ async function ensureClassReminders(user) {
   const bookings = await Booking.find({ client: user._id, status: "accepted" }).populate("session");
   const upcoming = bookings.filter((booking) =>
     booking.session &&
-    ["open", "confirmed", "rescheduled"].includes(booking.session.status) &&
+    booking.session.status === "published" &&
+    booking.session.isPublished === true &&
     booking.session.startAt > now &&
     booking.session.startAt <= cutoff
   );

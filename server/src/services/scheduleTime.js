@@ -35,7 +35,7 @@ export function assertScheduleBookable(session) {
   if (isScheduleUnavailable(session)) {
     throw new HttpError(410, UNAVAILABLE_BOOKING_MESSAGE);
   }
-  if (!["open", "confirmed", "rescheduled"].includes(session.status)) {
-    throw new HttpError(409, "This class is not open for booking.");
+  if (session.status !== "published" || session.isPublished !== true) {
+    throw new HttpError(403, "This schedule is not yet available for booking.");
   }
 }

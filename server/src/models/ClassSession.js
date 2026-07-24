@@ -6,7 +6,11 @@ export const SESSION_TYPES = ["group", "private"];
 // confirmed → instructor confirmed it runs (min headcount met)
 // cancelled → called off
 // completed → in the past / marked done
-export const SESSION_STATUSES = ["draft", "open", "confirmed", "rescheduled", "cancelled", "completed"];
+export const SESSION_STATUSES = [
+  "draft", "open", "confirmed", "rescheduled",
+  "pending_approval", "published", "rejected", "changes_requested",
+  "cancelled", "completed",
+];
 
 const classSessionSchema = new mongoose.Schema(
   {
@@ -24,6 +28,14 @@ const classSessionSchema = new mongoose.Schema(
     minToRun: { type: Number, required: true, min: 1, default: 1 },
 
     status: { type: String, enum: SESSION_STATUSES, default: "draft", index: true },
+    isPublished: { type: Boolean, default: false, index: true },
+    submittedAt: { type: Date, default: null },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    approvedAt: { type: Date, default: null },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    reviewedAt: { type: Date, default: null },
+    rejectionReason: { type: String, default: "" },
+    changeRequestNotes: { type: String, default: "" },
 
     // Number of ACCEPTED bookings. Maintained atomically as seats fill.
     acceptedCount: { type: Number, default: 0, min: 0 },
@@ -55,6 +67,14 @@ classSessionSchema.methods.toPublic = function () {
     capacity: this.capacity,
     minToRun: this.minToRun,
     status: this.status,
+    isPublished: this.isPublished,
+    submittedAt: this.submittedAt,
+    approvedBy: this.approvedBy,
+    approvedAt: this.approvedAt,
+    reviewedBy: this.reviewedBy,
+    reviewedAt: this.reviewedAt,
+    rejectionReason: this.rejectionReason,
+    changeRequestNotes: this.changeRequestNotes,
     acceptedCount: this.acceptedCount,
     seatsLeft: Math.max(0, this.capacity - this.acceptedCount),
     notes: this.notes,

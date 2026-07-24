@@ -44,7 +44,8 @@ export default function InstructorDashboard() {
   const events = sessions.map((s) => ({
     id: s.id, title: s.title, startAt: s.startAt, endAt: s.endAt, color: s.color,
     sub: `${s.room?.name} · ${s.acceptedCount}/${s.minToRun}→${s.capacity}`,
-    badge: s.status === "confirmed" ? "✓" : s.status === "draft" ? "draft" : "",
+    badge: s.status === "pending_approval" ? "Pending" : s.status === "rejected" ? "Rejected"
+      : s.status === "changes_requested" ? "Changes" : s.status === "published" ? "Published" : "",
     dim: s.status === "cancelled",
   }));
 
@@ -52,6 +53,20 @@ export default function InstructorDashboard() {
     const start = slot ? dateAtHour(slot.dateISO, slot.startHour) : new Date();
     const end = slot ? dateAtHour(slot.dateISO, slot.endHour) : new Date(Date.now() + 3600e3);
     setForm({ ...blankForm, room: rooms[0]?.id || "", startAt: toLocalInput(start), endAt: toLocalInput(end) });
+  }
+
+  function openEdit(session) {
+    setManage(null);
+    setForm({
+      id: session.id,
+      title: session.title,
+      type: session.type,
+      room: session.room?.id || "",
+      startAt: toLocalInput(session.startAt),
+      endAt: toLocalInput(session.endAt),
+      capacity: session.capacity,
+      minToRun: session.minToRun,
+    });
   }
 
   async function saveForm() {
@@ -66,9 +81,9 @@ export default function InstructorDashboard() {
         startAt: new Date(form.startAt).toISOString(), endAt: new Date(form.endAt).toISOString(),
         capacity: Number(form.capacity), minToRun: Number(form.minToRun),
       };
-      const { session } = await api("/sessions", { method: "POST", body });
-      await api(`/sessions/${session.id}/publish`, { method: "POST" }); // publish immediately so clients can book
-      toast.success(`Class "${session.title}" created and published.`);
+      if (form.id) await api(`/sessions/${form.id}`, { method: "PATCH", body });
+      else await api("/sessions", { method: "POST", body });
+      toast.success("Schedule submitted successfully and is waiting for Admin approval.");
       setForm(null); await load();
     } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
@@ -120,10 +135,12 @@ export default function InstructorDashboard() {
       <Modal
         open={!!form}
         onClose={() => setForm(null)}
-        title="New class"
+        title={form?.id ? "Edit and resubmit schedule" : "New class"}
         footer={<>
           <button className="btn ghost" onClick={() => setForm(null)}>Cancel</button>
-          <button className="btn" onClick={saveForm} disabled={busy || !form?.title || !form?.room}>Create & publish</button>
+          <button className="btn" onClick={saveForm} disabled={busy || !form?.title || !form?.room}>
+            {form?.id ? "Save & resubmit" : "Submit for approval"}
+          </button>
         </>}
       >
         {form && (
@@ -161,21 +178,22 @@ export default function InstructorDashboard() {
         title={s?.title}
         footer={s && <>
           {s.status !== "cancelled" && <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>}
-          {s.status !== "confirmed" &&
-            <button className="btn clay" onClick={() => sessionAction("confirm")} disabled={busy || !metMin}
-              title={metMin ? "" : `Need ${s.minToRun} accepted`}>Confirm class</button>}
+          {["rejected", "changes_requested", "published"].includes(s.status) &&
+            <button className="btn" onClick={() => openEdit(s)} disabled={busy}>Edit schedule</button>}
         </>}
       >
         {s && (
           <div>
             <p className="meta-line">🗓 {fmtRange(s.startAt, s.endAt)} · 📍 {s.room?.name}</p>
+            {s.rejectionReason && <div className="status-notice warning"><strong>Rejected:</strong> {s.rejectionReason}</div>}
+            {s.changeRequestNotes && <div className="status-notice warning"><strong>Changes requested:</strong> {s.changeRequestNotes}</div>}
             <div className="meta-line headcount">
               👥 {s.acceptedCount}/{s.minToRun} min ·
               <span className={"meter" + (metMin ? " met" : "")}><span style={{ width: `${Math.min(100, (s.acceptedCount / s.capacity) * 100)}%` }} /></span>
               {s.acceptedCount}/{s.capacity} seats
               <span className={"status-tag " + s.status}>{STATUS_LABEL[s.status]}</span>
             </div>
-            {metMin && s.status !== "confirmed" && <p className="meta-line">Enough people to run — you can confirm this class.</p>}
+            {metMin && s.status === "published" && <p className="meta-line">This class has reached its minimum client count.</p>}
 
             <h4 style={{ fontFamily: "var(--sans)", marginTop: "1rem", color: "var(--ink-mute)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bookings</h4>
             {manage.bookings.length === 0 ? <div className="empty">No bookings yet.</div> : (

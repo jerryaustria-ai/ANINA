@@ -29,6 +29,17 @@ function activeClientQuery(sessionId) {
   };
 }
 
+async function recordScheduleAudit(session, action, actor, dbSession = null) {
+  await SessionAudit.create([{
+    sessionId: session._id,
+    action,
+    performedBy: actor._id,
+    performedByRole: actor.role,
+    sessionSnapshot: session.toObject({ depopulate: true }),
+    bookingSnapshots: [],
+  }], dbSession ? { session: dbSession } : undefined);
+}
+
 function ownsOrAdmin(req, session) {
   return req.user.role === "admin" || session.instructor._id?.toString() === req.user._id.toString() ||
     session.instructor.toString?.() === req.user._id.toString();
@@ -136,9 +147,8 @@ router.get(
 
     // Clients only ever see published classes (open/confirmed), never drafts.
     if (req.user.role === "client") {
-      filter.status = filter.status && filter.status !== "draft"
-        ? filter.status
-        : { $in: ["open", "confirmed", "rescheduled", "completed", "cancelled"] };
+      filter.status = "published";
+      filter.isPublished = true;
     }
 
     const sessions = await populate(ClassSession.find(filter).sort("startAt"));
@@ -164,13 +174,141 @@ router.post(
 
     await validateSlot({ roomId: room, startAt, endAt, capacity: cap, instructorId, enforceNotPast: true });
 
+    const instructorSubmission = req.user.role === "instructor";
+    const now = new Date();
     const session = await ClassSession.create({
       title, type, instructor: instructorId, room,
       startAt, endAt, capacity: cap, minToRun: min,
-      notes, color, status: "draft",
+      notes, color,
+      status: instructorSubmission ? "pending_approval" : "published",
+      isPublished: !instructorSubmission,
+      submittedAt: instructorSubmission ? now : null,
+      approvedBy: instructorSubmission ? null : req.user._id,
+      approvedAt: instructorSubmission ? null : now,
     });
-    await announceSchedule(session, req.user._id, "created");
+    await recordScheduleAudit(session, instructorSubmission ? "SUBMITTED" : "APPROVED", req.user);
+    if (instructorSubmission) {
+      await notifyAdmins({
+        type: "SCHEDULE_SUBMITTED_FOR_APPROVAL",
+        title: "Schedule Awaiting Approval",
+        message: `${req.user.name} submitted ${session.title} for approval.`,
+        relatedUserId: req.user._id,
+        relatedScheduleId: session._id,
+        eventKey: `schedule-submitted:${session._id}:${session.submittedAt.getTime()}`,
+      });
+    } else {
+      await announceSchedule(session, req.user._id, "created");
+    }
     res.status(201).json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
+  })
+);
+
+// Admin approval queue.
+router.get(
+  "/approvals/pending",
+  requireRole("admin"),
+  asyncHandler(async (_req, res) => {
+    const sessions = await populate(ClassSession.find({
+      status: "pending_approval",
+      isPublished: false,
+    }).sort("submittedAt"));
+    res.json({ sessions: sessions.map((session) => session.toPublic()) });
+  })
+);
+
+async function reviewSchedule(req, status, details = {}) {
+  const session = await ClassSession.findById(req.params.id);
+  if (!session) throw new HttpError(404, "Session not found");
+  if (session.status !== "pending_approval") {
+    throw new HttpError(409, "This schedule is not awaiting Admin review.");
+  }
+  const instructor = await User.findById(session.instructor);
+  const now = new Date();
+  session.status = status;
+  session.isPublished = status === "published";
+  session.reviewedBy = req.user._id;
+  session.reviewedAt = now;
+  session.approvedBy = status === "published" ? req.user._id : null;
+  session.approvedAt = status === "published" ? now : null;
+  session.rejectionReason = details.reason || "";
+  session.changeRequestNotes = details.notes || "";
+  await session.save();
+
+  const config = {
+    published: ["APPROVED", "SCHEDULE_APPROVED", "Schedule Approved", `${session.title} was approved and published.`],
+    rejected: ["REJECTED", "SCHEDULE_REJECTED", "Schedule Rejected", `${session.title} was rejected: ${details.reason}`],
+    changes_requested: ["CHANGES_REQUESTED", "SCHEDULE_CHANGES_REQUESTED", "Changes Requested", `Changes were requested for ${session.title}: ${details.notes}`],
+  }[status];
+  await recordScheduleAudit(session, config[0], req.user);
+  await createNotification({
+    recipient: instructor,
+    type: config[1],
+    title: config[2],
+    message: config[3],
+    relatedUserId: instructor?._id,
+    relatedScheduleId: session._id,
+    eventKey: `schedule-review:${session._id}:${status}:${now.getTime()}`,
+  });
+  return populate(ClassSession.findById(session._id));
+}
+
+router.post(
+  "/:id/approve",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const session = await reviewSchedule(req, "published");
+    res.json({ session: session.toPublic() });
+  })
+);
+
+router.post(
+  "/:id/reject",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) throw new HttpError(400, "A rejection reason is required.");
+    const session = await reviewSchedule(req, "rejected", { reason });
+    res.json({ session: session.toPublic() });
+  })
+);
+
+router.post(
+  "/:id/request-changes",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const notes = String(req.body?.notes || "").trim();
+    if (!notes) throw new HttpError(400, "Change request notes are required.");
+    const session = await reviewSchedule(req, "changes_requested", { notes });
+    res.json({ session: session.toPublic() });
+  })
+);
+
+router.post(
+  "/:id/resubmit",
+  requireRole("instructor"),
+  asyncHandler(async (req, res) => {
+    const session = await ClassSession.findById(req.params.id);
+    if (!session) throw new HttpError(404, "Session not found");
+    if (session.instructor.toString() !== req.user._id.toString()) throw new HttpError(403, "Not your session");
+    if (!["rejected", "changes_requested"].includes(session.status)) {
+      throw new HttpError(409, "Only rejected schedules or schedules with requested changes can be resubmitted.");
+    }
+    session.status = "pending_approval";
+    session.isPublished = false;
+    session.submittedAt = new Date();
+    session.rejectionReason = "";
+    session.changeRequestNotes = "";
+    await session.save();
+    await recordScheduleAudit(session, "RESUBMITTED", req.user);
+    await notifyAdmins({
+      type: "SCHEDULE_RESUBMITTED",
+      title: "Schedule Resubmitted",
+      message: `${req.user.name} resubmitted ${session.title} for approval.`,
+      relatedUserId: req.user._id,
+      relatedScheduleId: session._id,
+      eventKey: `schedule-resubmitted:${session._id}:${session.submittedAt.getTime()}`,
+    });
+    res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
 
@@ -179,6 +317,14 @@ router.get(
   asyncHandler(async (req, res) => {
     const session = await populate(ClassSession.findById(req.params.id));
     if (!session) throw new HttpError(404, "Session not found");
+    if (req.user.role === "client" && (session.status !== "published" || session.isPublished !== true)) {
+      throw new HttpError(403, "This schedule is not yet available.");
+    }
+    if (req.user.role === "instructor" &&
+        session.instructor?._id?.toString() !== req.user._id.toString() &&
+        session.isPublished !== true) {
+      throw new HttpError(403, "You cannot access another Instructor's unpublished schedule.");
+    }
     res.json({ session: session.toPublic() });
   })
 );
@@ -250,17 +396,42 @@ router.patch(
     });
     if (b.room !== undefined) session.room = b.room;
     if (req.user.role === "admin" && b.instructor !== undefined) session.instructor = instructorId;
-    if (timeChanged && req.user.role === "admin" && b.status !== "completed") {
-      session.status = "rescheduled";
-    } else if (b.status !== undefined && ["draft", "open", "confirmed", "rescheduled", "completed"].includes(b.status)) {
-      session.status = b.status;
+    if (req.user.role === "instructor") {
+      session.status = "pending_approval";
+      session.isPublished = false;
+      session.submittedAt = new Date();
+      session.approvedBy = null;
+      session.approvedAt = null;
+      session.reviewedBy = null;
+      session.reviewedAt = null;
+      session.rejectionReason = "";
+      session.changeRequestNotes = "";
+    } else if (b.status === "completed") {
+      session.status = "completed";
+      session.isPublished = false;
+    } else if (!["cancelled", "completed"].includes(session.status)) {
+      session.status = "published";
+      session.isPublished = true;
     }
     await session.save();
-    await announceSchedule(session, req.user._id,
-      timeChanged ? "rescheduled"
-        : b.instructor && String(previousInstructorId) !== String(session.instructor) ? "instructor_changed"
-          : b.status !== undefined && previousStatus !== session.status ? "status" : "updated",
-      { previousInstructorId });
+    if (req.user.role === "instructor") {
+      const auditAction = ["rejected", "changes_requested"].includes(previousStatus) ? "RESUBMITTED" : "SUBMITTED";
+      await recordScheduleAudit(session, auditAction, req.user);
+      await notifyAdmins({
+        type: auditAction === "RESUBMITTED" ? "SCHEDULE_RESUBMITTED" : "SCHEDULE_SUBMITTED_FOR_APPROVAL",
+        title: auditAction === "RESUBMITTED" ? "Schedule Resubmitted" : "Schedule Revision Awaiting Approval",
+        message: `${req.user.name} submitted changes to ${session.title} for approval.`,
+        relatedUserId: req.user._id,
+        relatedScheduleId: session._id,
+        eventKey: `schedule-edit-submitted:${session._id}:${session.submittedAt.getTime()}`,
+      });
+    } else {
+      await announceSchedule(session, req.user._id,
+        timeChanged ? "rescheduled"
+          : b.instructor && String(previousInstructorId) !== String(session.instructor) ? "instructor_changed"
+            : "updated",
+        { previousInstructorId });
+    }
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
@@ -276,7 +447,8 @@ router.post(
     if (session.acceptedCount < session.minToRun) {
       throw new HttpError(400, `Need ${session.minToRun} accepted, have ${session.acceptedCount}`);
     }
-    session.status = "confirmed";
+    session.status = "published";
+    session.isPublished = true;
     await session.save();
     await announceSchedule(session, req.user._id, "status");
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
@@ -544,15 +716,20 @@ router.put(
   })
 );
 
-// Publish a draft (convenience): draft -> open.
+// Legacy Admin publish convenience. Instructor submissions must use /approve.
 router.post(
   "/:id/publish",
-  requireRole("instructor", "admin"),
+  requireRole("admin"),
   asyncHandler(async (req, res) => {
     const session = await ClassSession.findById(req.params.id);
     if (!session) throw new HttpError(404, "Session not found");
     if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
-    if (session.status === "draft") session.status = "open";
+    if (!["cancelled", "completed"].includes(session.status)) {
+      session.status = "published";
+      session.isPublished = true;
+      session.approvedBy = req.user._id;
+      session.approvedAt = new Date();
+    }
     await session.save();
     res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })

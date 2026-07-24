@@ -52,10 +52,10 @@ async function run() {
   const s4start = at(3, 10);
 
   const [s1, s2, s3, s4] = await ClassSession.create([
-    { title: "Postpartum Recovery Flow", type: "group", instructor: joycee._id, room: studioA._id, startAt: s1start, endAt: plus(s1start, 1), capacity: 12, minToRun: 4, status: "open" },
-    { title: "Mobility & Core", type: "group", instructor: joycee._id, room: studioB._id, startAt: s2start, endAt: plus(s2start, 1), capacity: 8, minToRun: 3, status: "open" },
-    { title: "Strength Basics", type: "group", instructor: maya._id, room: studioA._id, startAt: s3start, endAt: plus(s3start, 1), capacity: 12, minToRun: 5, status: "open" },
-    { title: "Private Session", type: "private", instructor: maya._id, room: privateRoom._id, startAt: s4start, endAt: plus(s4start, 1), capacity: 1, minToRun: 1, status: "open" },
+    { title: "Postpartum Recovery Flow", type: "group", instructor: joycee._id, room: studioA._id, startAt: s1start, endAt: plus(s1start, 1), capacity: 12, minToRun: 4, status: "published", isPublished: true },
+    { title: "Mobility & Core", type: "group", instructor: joycee._id, room: studioB._id, startAt: s2start, endAt: plus(s2start, 1), capacity: 8, minToRun: 3, status: "published", isPublished: true },
+    { title: "Strength Basics", type: "group", instructor: maya._id, room: studioA._id, startAt: s3start, endAt: plus(s3start, 1), capacity: 12, minToRun: 5, status: "published", isPublished: true },
+    { title: "Private Session", type: "private", instructor: maya._id, room: privateRoom._id, startAt: s4start, endAt: plus(s4start, 1), capacity: 1, minToRun: 1, status: "published", isPublished: true },
   ]);
 
   // A few bookings; accept two into s1 so it shows headcount progress.

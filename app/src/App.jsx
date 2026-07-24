@@ -14,7 +14,7 @@ function Nav() {
   const tabs = {
     client: [["/", "My Bookings"], ["/membership", "Membership"]],
     instructor: [["/", "My Classes"]],
-    admin: [["/", "Studio Schedule"], ["/rooms", "Rooms"], ["/people", "People"], ["/tiers", "Tiers"], ["/memberships", "Memberships"]],
+    admin: [["/", "Studio Schedule"], ["/approvals", "Schedule Approval"], ["/rooms", "Rooms"], ["/people", "People"], ["/tiers", "Tiers"], ["/memberships", "Memberships"]],
   }[user.role] || [];
 
   return (
@@ -54,6 +54,7 @@ export default function App() {
         {user.role === "admin" && (
           <>
             <Route path="/" element={<AdminDashboard view="schedule" />} />
+            <Route path="/approvals" element={<AdminDashboard view="approvals" />} />
             <Route path="/rooms" element={<AdminDashboard view="rooms" />} />
             <Route path="/people" element={<AdminDashboard view="people" />} />
             <Route path="/tiers" element={<AdminDashboard view="tiers" />} />

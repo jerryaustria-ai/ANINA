@@ -3,7 +3,7 @@ import { Booking } from "../models/Booking.js";
 
 // Two intervals overlap when: existing.start < newEnd AND existing.end > newStart.
 // Cancelled sessions don't hold the room.
-const BLOCKING = { $ne: "cancelled" };
+const BLOCKING = { $in: ["draft", "open", "confirmed", "rescheduled", "pending_approval", "published", "changes_requested"] };
 
 export async function findRoomConflict({ roomId, startAt, endAt, excludeId }) {
   const q = {

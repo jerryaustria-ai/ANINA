@@ -15,6 +15,9 @@ function showArrival(notification) {
 }
 
 function notificationPath(notification, role) {
+  if (role === "admin" && ["SCHEDULE_SUBMITTED_FOR_APPROVAL", "SCHEDULE_RESUBMITTED"].includes(notification.type)) {
+    return `/approvals?schedule=${notification.relatedScheduleId}`;
+  }
   if (role === "admin" && notification.relatedUserId && !notification.relatedScheduleId) {
     return `/people?user=${notification.relatedUserId}`;
   }

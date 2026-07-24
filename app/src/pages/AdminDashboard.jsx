@@ -9,6 +9,7 @@ import { toast } from "react-toastify";
 
 export default function AdminDashboard({ view }) {
   if (view === "rooms") return <RoomsView />;
+  if (view === "approvals") return <ScheduleApprovalView />;
   if (view === "people") return <PeopleView />;
   if (view === "tiers") return <TiersView />;
   if (view === "memberships") return <MembershipsView />;
@@ -100,7 +101,7 @@ function ScheduleView() {
   const clients = users.filter((user) => user.role === "client" && user.active);
   const instructors = users.filter((user) => user.role === "instructor" && user.active);
   const activeSessions = sessions.filter((session) =>
-    ["open", "confirmed", "rescheduled"].includes(session.status) && new Date(session.startAt) > new Date());
+    session.status === "published" && session.isPublished && new Date(session.startAt) > new Date());
   const allSelectedBookings = sel ? bookings.filter((booking) => booking.session?.id === sel.id) : [];
   const selectedBookings = allSelectedBookings.filter((booking) =>
     ["pending", "accepted", "waitlisted"].includes(booking.status));
@@ -117,7 +118,7 @@ function ScheduleView() {
     setEdit({
       title: "", type: "group", instructor: instructors[0]?.id || "", room: rooms[0]?.id || "",
       startAt: toLocalInput(start), endAt: toLocalInput(end), capacity: 1, minToRun: 1,
-      notes: "", status: "open", clientIds: [],
+      notes: "", status: "published", clientIds: [],
     });
   }
 
@@ -158,7 +159,6 @@ function ScheduleView() {
         const { session } = await api("/sessions", { method: "POST", body });
         createdId = session.id;
         await api(`/sessions/${session.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
-        await api(`/sessions/${session.id}`, { method: "PATCH", body: { status: "open" } });
         toast.success(`Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
       }
       setEdit(null); await load();
@@ -236,7 +236,7 @@ function ScheduleView() {
     .map((s) => ({
       id: s.id, title: s.title, startAt: s.startAt, endAt: s.endAt, color: s.color,
       sub: `${s.instructor?.name} · ${s.acceptedCount}/${s.capacity}`,
-      badge: s.status === "confirmed" ? "✓" : s.status === "cancelled" ? "✕" : "",
+      badge: s.status === "published" ? "✓" : s.status === "pending_approval" ? "Pending" : s.status === "cancelled" ? "✕" : "",
       dim: s.status === "cancelled",
     }));
 
@@ -291,7 +291,7 @@ function ScheduleView() {
               {sel.cancelledAt ? ` · ${new Date(sel.cancelledAt).toLocaleString()}` : ""}
             </p>}
             <div className="schedule-detail-head"><h4>Client bookings</h4>
-              {["open", "confirmed", "rescheduled"].includes(sel.status) &&
+              {sel.status === "published" && sel.isPublished &&
                 <button className="btn sm" onClick={() => setAssign({ sessionId: sel.id, clientIds: selectedBookings.map((booking) => booking.client?.id).filter(Boolean), capacity: sel.capacity })}>Manage clients</button>}</div>
             <p className="meta-line"><strong>{selectedBookings.length}</strong> assigned · <strong>{Math.max(0, sel.capacity - selectedBookings.length)}</strong> remaining slots</p>
             {selectedBookings.length === 0 ? <p className="meta-line">No active client bookings.</p> :
@@ -313,7 +313,6 @@ function ScheduleView() {
                   <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status} booking record</span></div>
                 </div>
               ))}
-              <p className="meta-line">Cancelled, declined, and completed records do not block Admin deletion. They are preserved in the deletion audit.</p>
             </>}
           </div>
         )}
@@ -338,7 +337,7 @@ function ScheduleView() {
             <option value="group">Group</option><option value="private">Private</option></select></div>
             <div><label>Capacity</label><input type="number" min="1" disabled={edit.type === "private"} value={edit.capacity} onChange={(e) => setEdit({ ...edit, capacity: e.target.value })} /></div></div>
           {edit.id && <div className="field"><label>Schedule status</label><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
-            <option value="open">Scheduled</option><option value="confirmed">Confirmed</option><option value="rescheduled">Rescheduled</option><option value="completed">Completed</option>
+            <option value="published">Published</option><option value="completed">Completed</option>
           </select></div>}
           <div className="field"><label>Assigned clients</label>
             <ClientMultiSelect clients={clients} value={edit.clientIds} capacity={Number(edit.capacity)}
@@ -365,6 +364,92 @@ function ScheduleView() {
       </Modal>
     </div>
   );
+}
+
+/* ---------- Instructor schedule approvals ---------- */
+function ScheduleApprovalView() {
+  const [sessions, setSessions] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [review, setReview] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api("/sessions/approvals/pending").then(({ sessions }) => setSessions(sessions));
+  useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("schedule");
+    const session = id && sessions.find((item) => item.id === id);
+    if (session) setDetail(session);
+  }, [sessions]);
+
+  async function approve(session) {
+    setBusy(true);
+    try {
+      await api(`/sessions/${session.id}/approve`, { method: "POST" });
+      toast.success("Schedule approved and published successfully.");
+      setDetail(null); await load();
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+
+  async function submitReview() {
+    const text = review.text.trim();
+    if (!text) return toast.error(review.action === "reject" ? "A rejection reason is required." : "Change request notes are required.");
+    setBusy(true);
+    try {
+      if (review.action === "reject") {
+        await api(`/sessions/${review.session.id}/reject`, { method: "POST", body: { reason: text } });
+        toast.warning("Schedule rejected.");
+      } else {
+        await api(`/sessions/${review.session.id}/request-changes`, { method: "POST", body: { notes: text } });
+        toast.info("Changes requested from the Instructor.");
+      }
+      setReview(null); setDetail(null); await load();
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+
+  const details = (session) => <div className="approval-details">
+    <p><strong>{session.title}</strong></p>
+    <p className="meta-line">Instructor: {session.instructor?.name}<br />
+      Date and time: {fmtRange(session.startAt, session.endAt)}<br />
+      Location: {session.room?.name}{session.room?.location ? ` — ${session.room.location}` : ""}<br />
+      Capacity: {session.capacity} · Minimum clients: {session.minToRun}<br />
+      Type: {session.type}<br />
+      Description / notes: {session.notes || "—"}<br />
+      Submitted: {session.submittedAt ? new Date(session.submittedAt).toLocaleString() : "—"}<br />
+      Status: {STATUS_LABEL[session.status] || session.status.replaceAll("_", " ")}</p>
+  </div>;
+
+  return <div className="page">
+    <div className="page-head"><div><h1>Schedule Approval</h1><p>Review Instructor-submitted schedules before clients can see or book them.</p></div></div>
+    {!sessions.length ? <div className="empty">No schedules are waiting for approval.</div> :
+      <div className="grid-cards">{sessions.map((session) => <div className="card" key={session.id}>
+        {details(session)}
+        <div className="approval-actions">
+          <button className="btn ghost sm" onClick={() => setDetail(session)}>View details</button>
+          <button className="btn sm" onClick={() => approve(session)} disabled={busy}>Approve & Publish</button>
+          <button className="btn danger sm" onClick={() => setReview({ session, action: "reject", text: "" })}>Reject</button>
+          <button className="btn clay sm" onClick={() => setReview({ session, action: "changes", text: "" })}>Request changes</button>
+        </div>
+      </div>)}</div>}
+
+    <Modal open={!!detail} onClose={() => setDetail(null)} title="Schedule details"
+      footer={detail && <><button className="btn danger" onClick={() => setReview({ session: detail, action: "reject", text: "" })}>Reject</button>
+        <button className="btn clay" onClick={() => setReview({ session: detail, action: "changes", text: "" })}>Request changes</button>
+        <button className="btn" onClick={() => approve(detail)} disabled={busy}>Approve & Publish</button></>}>
+      {detail && details(detail)}
+    </Modal>
+
+    <Modal open={!!review} onClose={() => setReview(null)}
+      title={review?.action === "reject" ? "Reject schedule" : "Request changes"}
+      footer={<><button className="btn ghost" onClick={() => setReview(null)}>Cancel</button>
+        <button className={review?.action === "reject" ? "btn danger" : "btn"} onClick={submitReview} disabled={busy || !review?.text.trim()}>
+          {review?.action === "reject" ? "Reject" : "Send request"}
+        </button></>}>
+      {review && <div className="field"><label>{review.action === "reject" ? "Rejection reason" : "Required changes"}</label>
+        <textarea rows="4" value={review.text} onChange={(event) => setReview({ ...review, text: event.target.value })} autoFocus /></div>}
+    </Modal>
+  </div>;
 }
 
 /* ---------- Rooms & capacity ---------- */
