@@ -157,6 +157,16 @@ a { color:var(--sage-deep); }
 .picture-button { display:inline-block; position:relative; overflow:hidden; cursor:pointer; }
 .picture-button input { position:absolute; inset:0; opacity:0; cursor:pointer; }
 .picture-remove { display:block; border:0; background:transparent; color:#8a3b30; padding:0.4rem 0.7rem 0; font-size:0.78rem; }
+.dependency-user { display:flex; align-items:center; gap:0.7rem; margin-bottom:1rem; }
+.dependency-heading { margin:1rem 0 0.45rem; color:var(--ink-soft); }
+.dependency-row { display:flex; justify-content:space-between; align-items:flex-start; gap:0.7rem; padding:0.7rem 0; border-bottom:1px solid var(--line); }
+.dependency-main { display:flex; flex-direction:column; gap:0.2rem; font-size:0.8rem; color:var(--ink-mute); min-width:0; }
+.dependency-main strong { color:var(--ink); font-size:0.9rem; }
+.dependency-actions { display:flex; gap:0.35rem; flex-wrap:wrap; justify-content:flex-end; }
+.dependency-detail { margin-top:1rem; padding:0.9rem; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); }
+.dependency-detail-head,.detail-booking { display:flex; justify-content:space-between; align-items:center; gap:0.6rem; }
+.dependency-detail h4,.dependency-detail p { margin:0 0 0.5rem; }
+.detail-booking { padding:0.45rem 0; border-top:1px solid var(--line); font-size:0.82rem; }
 
 /* ---------- Week/Month toggle ---------- */
 .view-toggle { display:inline-flex; border:1px solid var(--line); border-radius:100px; overflow:hidden; background:var(--white); }

@@ -158,6 +158,51 @@ router.patch(
   })
 );
 
+// Admin: inspect historical records that prevent permanent user deletion.
+router.get(
+  "/:id/dependencies",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.params.id);
+    if (!user) throw new HttpError(404, "User not found");
+
+    const [sessions, bookings] = await Promise.all([
+      ClassSession.find({ instructor: user._id })
+        .populate("instructor", "name email picture")
+        .populate("room", "name color location")
+        .sort("-startAt"),
+      Booking.find({ client: user._id })
+        .populate("client", "name email picture")
+        .populate({
+          path: "session",
+          populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }],
+        })
+        .sort("-createdAt"),
+    ]);
+
+    const sessionIds = sessions.map((session) => session._id);
+    const rosterBookings = sessionIds.length
+      ? await Booking.find({ session: { $in: sessionIds } }).populate("client", "name email picture").sort("createdAt")
+      : [];
+    const rosterBySession = new Map();
+    rosterBookings.forEach((booking) => {
+      const key = booking.session.toString();
+      if (!rosterBySession.has(key)) rosterBySession.set(key, []);
+      rosterBySession.get(key).push(booking.toPublic());
+    });
+
+    res.json({
+      user: user.toPublic(),
+      hasDependencies: sessions.length > 0 || bookings.length > 0,
+      sessions: sessions.map((session) => ({
+        ...session.toPublic(),
+        bookings: rosterBySession.get(session._id.toString()) || [],
+      })),
+      bookings: bookings.filter((booking) => booking.session).map((booking) => booking.toPublic()),
+    });
+  })
+);
+
 // Admin: permanently delete a user — only when they hold no data. Users with
 // sessions or bookings should be deactivated instead (to preserve history).
 router.delete(
@@ -173,7 +218,7 @@ router.delete(
       Booking.countDocuments({ client: user._id }),
     ]);
     if (sessions || bookings) {
-      throw new HttpError(409, "This user has classes or bookings — deactivate them instead of deleting");
+      throw new HttpError(409, "This user has existing classes or bookings and cannot be deleted. Please deactivate the user instead.");
     }
     await user.deleteOne();
     res.json({ ok: true, deleted: true });

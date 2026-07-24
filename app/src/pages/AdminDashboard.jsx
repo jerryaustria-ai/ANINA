@@ -181,6 +181,8 @@ function PeopleView() {
   const [msg, setMsg] = useState(null);
   const [add, setAdd] = useState(null);
   const [editUser, setEditUser] = useState(null);
+  const [deleteReview, setDeleteReview] = useState(null);
+  const [dependencyDetail, setDependencyDetail] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = () => api("/users").then(({ users }) => setUsers(users));
   useEffect(() => { load(); }, []);
@@ -199,10 +201,51 @@ function PeopleView() {
   }
 
   async function removeUser(u) {
-    if (!window.confirm(`Permanently delete ${u.name} (${u.email})? This can't be undone.`)) return;
     setMsg(null);
-    try { await api(`/users/${u.id}`, { method: "DELETE" }); await load(); setMsg({ kind: "ok", text: `${u.name} deleted.` }); }
+    try {
+      const dependencies = await api(`/users/${u.id}/dependencies`);
+      if (dependencies.hasDependencies) {
+        setDependencyDetail(null);
+        setDeleteReview(dependencies);
+        return;
+      }
+      if (!window.confirm(`Permanently delete ${u.name} (${u.email})? This cannot be undone.`)) return;
+      await api(`/users/${u.id}`, { method: "DELETE" });
+      await load();
+      setMsg({ kind: "ok", text: `${u.name} permanently deleted.` });
+    }
     catch (e) { setMsg({ kind: "err", text: e.message }); }
+  }
+
+  async function refreshDeleteReview() {
+    const dependencies = await api(`/users/${deleteReview.user.id}/dependencies`);
+    setDeleteReview(dependencies);
+    return dependencies;
+  }
+
+  async function cancelDependencyBooking(booking) {
+    if (!window.confirm(`Cancel ${booking.client?.name || "this client's"} booking for ${booking.session?.title}?`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/bookings/${booking.id}/cancel`, { method: "POST" });
+      await refreshDeleteReview();
+      setDependencyDetail(null);
+      setMsg({ kind: "ok", text: "Booking cancelled. Historical records were retained." });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
+  }
+
+  async function deactivateReviewedUser() {
+    const user = deleteReview.user;
+    if (!window.confirm(`Deactivate ${user.name}? They will no longer be able to log in. Existing classes and bookings will be retained.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      await api(`/users/${user.id}/active`, { method: "PATCH", body: { active: false } });
+      setDeleteReview(null); setDependencyDetail(null);
+      await load();
+      setMsg({ kind: "ok", text: `${user.name} deactivated. All historical records were retained.` });
+    } catch (e) { setMsg({ kind: "err", text: e.message }); }
+    finally { setBusy(false); }
   }
 
   async function createUser() {
@@ -343,6 +386,63 @@ function PeopleView() {
               <input value={editUser.specialtiesText || ""} onChange={(e) => setEditUser({ ...editUser, specialtiesText: e.target.value })} placeholder="Mobility, Strength, Recovery" /></div>
             <p className="meta-line">Created {editUser.createdAt ? new Date(editUser.createdAt).toLocaleString() : "—"}<br />
               Last updated {editUser.updatedAt ? new Date(editUser.updatedAt).toLocaleString() : "—"}</p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!deleteReview} onClose={() => { setDeleteReview(null); setDependencyDetail(null); }} title="User cannot be deleted"
+        footer={<><button className="btn ghost" onClick={() => { setDeleteReview(null); setDependencyDetail(null); }}>Close</button>
+          <button className="btn danger" onClick={deactivateReviewedUser} disabled={busy || !deleteReview?.user?.active}>Deactivate User</button></>}>
+        {deleteReview && (
+          <div>
+            <div className="banner warn">This user has existing classes or bookings and cannot be deleted. Please deactivate the user instead.</div>
+            <div className="dependency-user">
+              <Avatar src={deleteReview.user.picture} name={deleteReview.user.name} size={42} />
+              <div><strong>{deleteReview.user.name}</strong><div className="meta-line">{deleteReview.user.email} · {deleteReview.user.role}</div></div>
+            </div>
+
+            {deleteReview.sessions.length > 0 && <h4 className="dependency-heading">Assigned classes and schedules</h4>}
+            {deleteReview.sessions.map((session) => (
+              <div className="dependency-row" key={session.id}>
+                <div className="dependency-main"><strong>{session.title}</strong>
+                  <span>{new Date(session.startAt).toLocaleDateString()} · {new Date(session.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(session.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                  <span>Instructor: {session.instructor?.name || "—"} · Clients: {session.bookings?.map((b) => b.client?.name).filter(Boolean).join(", ") || "None"}</span>
+                  <span>Status: {session.status}</span></div>
+                <button className="btn ghost sm" onClick={() => setDependencyDetail({ type: "class", data: session })}>View details</button>
+              </div>
+            ))}
+
+            {deleteReview.bookings.length > 0 && <h4 className="dependency-heading">Client bookings</h4>}
+            {deleteReview.bookings.map((booking) => (
+              <div className="dependency-row" key={booking.id}>
+                <div className="dependency-main"><strong>{booking.session?.title || "Booking"}</strong>
+                  <span>{new Date(booking.session?.startAt).toLocaleDateString()} · {new Date(booking.session?.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(booking.session?.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                  <span>Instructor: {booking.session?.instructor?.name || "—"} · Client: {booking.client?.name || deleteReview.user.name}</span>
+                  <span>Booking status: {booking.status}</span></div>
+                <div className="dependency-actions"><button className="btn ghost sm" onClick={() => setDependencyDetail({ type: "booking", data: booking })}>View details</button>
+                  {["pending", "accepted", "waitlisted"].includes(booking.status) && <button className="btn danger sm" onClick={() => cancelDependencyBooking(booking)} disabled={busy}>Cancel booking</button>}</div>
+              </div>
+            ))}
+
+            {dependencyDetail && (
+              <div className="dependency-detail">
+                <div className="dependency-detail-head"><h4>{dependencyDetail.type === "class" ? "Class details" : "Booking details"}</h4>
+                  <button className="modal-x" onClick={() => setDependencyDetail(null)}>×</button></div>
+                {dependencyDetail.type === "class" ? (
+                  <>
+                    <p><strong>{dependencyDetail.data.title}</strong></p>
+                    <p className="meta-line">Room: {dependencyDetail.data.room?.name || "—"}<br />Instructor: {dependencyDetail.data.instructor?.name || "—"}<br />Capacity: {dependencyDetail.data.acceptedCount}/{dependencyDetail.data.capacity}<br />Status: {dependencyDetail.data.status}</p>
+                    <h4>Class bookings</h4>
+                    {dependencyDetail.data.bookings?.length ? dependencyDetail.data.bookings.map((booking) => (
+                      <div className="detail-booking" key={booking.id}><span>{booking.client?.name || "Client"} · {booking.status}</span>
+                        {["pending", "accepted", "waitlisted"].includes(booking.status) && <button className="btn danger sm" onClick={() => cancelDependencyBooking(booking)} disabled={busy}>Cancel</button>}</div>
+                    )) : <p className="meta-line">No bookings for this class.</p>}
+                  </>
+                ) : (
+                  <p className="meta-line"><strong>{dependencyDetail.data.session?.title}</strong><br />Client: {dependencyDetail.data.client?.name || deleteReview.user.name}<br />Instructor: {dependencyDetail.data.session?.instructor?.name || "—"}<br />Room: {dependencyDetail.data.session?.room?.name || "—"}<br />Status: {dependencyDetail.data.status}<br />Note: {dependencyDetail.data.note || "—"}</p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Modal>
