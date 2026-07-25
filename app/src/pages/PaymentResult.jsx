@@ -22,7 +22,7 @@ export default function PaymentResult() {
         setOrder(result.order);
         setError("");
         const final = ["confirmed", "waitlisted", "declined", "failed", "cancelled", "refunded"].includes(result.order.status);
-        if (!final && ["success", "cancelled"].includes(returnState)) {
+        if (!final && checks < 30) {
           timer = setTimeout(() => setChecks((value) => value + 1), 2200);
         }
       } catch (requestError) {
