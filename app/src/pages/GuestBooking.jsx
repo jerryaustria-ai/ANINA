@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import { api } from "../api.js";
+import { api, getToken } from "../api.js";
 import { fmtTime } from "../util.js";
+import Modal from "../components/Modal.jsx";
 
 const money = (amount, currency = "PHP") =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(amount);
@@ -18,6 +19,7 @@ export default function GuestBooking() {
   const [data, setData] = useState({ session: null, plans: [] });
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", tierId: "" });
   const [state, setState] = useState({ loading: true, submitting: false, error: "" });
+  const [duplicate, setDuplicate] = useState(null);
 
   useEffect(() => {
     api(`/guest-checkout/plans?sessionId=${sessionId}`)
@@ -34,20 +36,30 @@ export default function GuestBooking() {
     [data.plans, form.tierId]
   );
 
-  async function submit(event) {
-    event.preventDefault();
+  async function createOrder(continueAnyway = false) {
     setState((value) => ({ ...value, submitting: true }));
     try {
       const result = await api("/guest-checkout/orders", {
         method: "POST",
-        body: { ...form, sessionId },
+        body: { ...form, sessionId, continueAnyway },
       });
       sessionStorage.setItem(`guest_order_${result.order.id}`, result.token);
       navigate(`/guest/checkout/${result.order.id}?token=${result.token}`);
     } catch (error) {
-      toast.error(error.message);
+      if (error.code === "DUPLICATE_ACTIVE_PURCHASE") setDuplicate(error.details);
+      else toast.error(error.message);
       setState((value) => ({ ...value, submitting: false }));
     }
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    createOrder(false);
+  }
+
+  function chooseDifferentPlan() {
+    setDuplicate(null);
+    document.getElementById("guest-plan-selection")?.scrollIntoView({ behavior: "smooth" });
   }
 
   if (state.loading) return <div className="guest-state">Loading booking options…</div>;
@@ -75,7 +87,7 @@ export default function GuestBooking() {
                 onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
             </div>
           </section>
-          <section className="guest-panel">
+          <section className="guest-panel" id="guest-plan-selection">
             <h2>2. Select one plan</h2>
             {!data.plans.length && <p>No package is currently available for this class.</p>}
             <div className="guest-plan-list">
@@ -106,5 +118,24 @@ export default function GuestBooking() {
         </aside>
       </div>
     </main>
+    <Modal
+      open={!!duplicate}
+      onClose={() => setDuplicate(null)}
+      title="Duplicate Booking Detected"
+      footer={<>
+        <button className="btn" type="button" onClick={chooseDifferentPlan}>Choose a Different Plan</button>
+        <button className="btn" type="button" onClick={() => navigate(getToken() ? "/dashboard" : "/login?next=/dashboard")}>View My Existing Booking</button>
+        {duplicate?.allowAdminOverride && <button className="btn primary" type="button"
+          onClick={() => { setDuplicate(null); createOrder(true); }}>Continue Anyway</button>}
+      </>}
+    >
+      <p>You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.</p>
+      <dl className="duplicate-details">
+        {duplicate?.existingPlanName && <div><dt>Existing Plan Name</dt><dd>{duplicate.existingPlanName}</dd></div>}
+        {duplicate?.remainingSessions != null && <div><dt>Remaining Sessions</dt><dd>{duplicate.remainingSessions}</dd></div>}
+        {duplicate?.expirationDate && <div><dt>Expiration Date</dt><dd>{new Date(duplicate.expirationDate).toLocaleDateString("en-PH", { dateStyle: "medium" })}</dd></div>}
+        {duplicate?.bookingReference && <div><dt>Booking Reference</dt><dd>{duplicate.bookingReference}</dd></div>}
+      </dl>
+    </Modal>
   </div>;
 }

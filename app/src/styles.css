@@ -528,6 +528,10 @@ a { color:var(--sage-deep); }
 .guest-plan p { margin:.2rem 0; color:var(--ink-soft); font-size:.78rem; }
 .guest-plan span { color:#52634b; font-size:.74rem; }
 .guest-plan b { white-space:nowrap; font-size:1rem; }
+.duplicate-details { margin:1rem 0 0; display:grid; gap:.55rem; }
+.duplicate-details div { display:flex; justify-content:space-between; gap:1rem; padding:.55rem 0; border-bottom:1px solid var(--line); }
+.duplicate-details dt { color:var(--ink-soft); }
+.duplicate-details dd { margin:0; text-align:right; font-weight:600; overflow-wrap:anywhere; }
 .guest-primary { width:100%; min-height:48px; padding:.8rem 1.2rem; border:1px solid #52634b; border-radius:8px;
   background:#52634b; color:#fff; font-weight:700; cursor:pointer; }
 .guest-primary:disabled { opacity:.55; cursor:not-allowed; }

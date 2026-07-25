@@ -7,7 +7,8 @@ import { fulfillGuestPurchase } from "../services/guestPurchase.js";
 import * as xendit from "../services/xendit.js";
 import { asyncHandler } from "../utils/http.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
-import { requireAuth } from "../middleware/auth.js";
+import { optionalAuth, requireAuth } from "../middleware/auth.js";
+import { findActiveDuplicate } from "../services/duplicatePurchase.js";
 
 const router = Router();
 const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -61,7 +62,7 @@ router.get("/plans", asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/orders", asyncHandler(async (req, res) => {
+router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   const fullName = String(req.body.fullName || "").trim();
   const email = String(req.body.email || "").trim().toLowerCase();
   const phone = String(req.body.phone || "").trim();
@@ -76,6 +77,18 @@ router.post("/orders", asyncHandler(async (req, res) => {
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   if (!tier || !matchesClass(tier, session)) return res.status(400).json({ error: "The selected plan is not available for this class." });
 
+  const duplicate = await findActiveDuplicate({ email, session, tier });
+  const adminOverrideEnabled = process.env.ALLOW_ADMIN_DUPLICATE_PURCHASE === "true";
+  const mayOverride = adminOverrideEnabled && req.user?.role === "admin";
+  const overrideRequested = mayOverride && req.body.continueAnyway === true;
+  if (duplicate && !overrideRequested) {
+    return res.status(409).json({
+      error: "You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.",
+      code: "DUPLICATE_ACTIVE_PURCHASE",
+      details: { ...duplicate, allowAdminOverride: mayOverride },
+    });
+  }
+
   const vatRate = Math.max(0, Number(process.env.VAT_RATE || 0));
   const totalAmount = tier.amount;
   const subtotal = vatRate ? Math.round((totalAmount / (1 + vatRate)) * 100) / 100 : totalAmount;
@@ -86,6 +99,8 @@ router.post("/orders", asyncHandler(async (req, res) => {
     subtotal, vatAmount, totalAmount, currency: tier.currency,
     referenceId: `guest_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`,
     accessToken: crypto.randomBytes(24).toString("hex"),
+    duplicateOverrideBy: overrideRequested ? req.user._id : null,
+    duplicateOverrideAt: overrideRequested ? new Date() : null,
   });
   await purchase.populate([{ path: "session", populate: [{ path: "instructor" }, { path: "room" }] }, { path: "tier" }]);
   res.status(201).json({ order: purchase.toPublic(), token: purchase.accessToken });
@@ -113,6 +128,20 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
   if (["confirmed", "waitlisted"].includes(purchase.status)) return res.json({ order: purchase.toPublic() });
   if (!safeSession(purchase.session)) return res.status(409).json({ error: "This class is no longer available for booking." });
+  if (!purchase.duplicateOverrideBy) {
+    const duplicate = await findActiveDuplicate({
+      email: purchase.email,
+      session: purchase.session,
+      tier: purchase.tier,
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        error: "You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.",
+        code: "DUPLICATE_ACTIVE_PURCHASE",
+        details: duplicate,
+      });
+    }
+  }
 
   if (!purchase.xenditSessionId) {
     const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");

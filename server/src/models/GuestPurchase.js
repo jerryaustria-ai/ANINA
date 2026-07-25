@@ -34,6 +34,8 @@ const guestPurchaseSchema = new mongoose.Schema(
     client: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
     membership: { type: mongoose.Schema.Types.ObjectId, ref: "Membership", default: null },
     booking: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
+    duplicateOverrideBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    duplicateOverrideAt: { type: Date, default: null },
     emailStatus: { type: String, enum: ["pending", "sent", "skipped", "failed"], default: "pending" },
     emailMessageId: { type: String, default: "" },
     emailEventKeys: { type: [String], default: [] },

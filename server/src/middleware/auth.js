@@ -18,3 +18,20 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired session" });
   }
 }
+
+// Loads the current user when a token is present, while keeping public routes public.
+export async function optionalAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) return next();
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(payload.sub);
+    if (!user || !user.active) return res.status(401).json({ error: "Account not found or disabled" });
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+}
