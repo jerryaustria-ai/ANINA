@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ROLES, default: "client", index: true },
     phone: { type: String, default: "" },
     active: { type: Boolean, default: true },
+    lastGuestPurchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", default: null },
+    purchaseCount: { type: Number, default: 0, min: 0 },
 
     // Instructor-only profile fields
     bio: { type: String, default: "" },
@@ -29,6 +31,7 @@ userSchema.methods.toPublic = function () {
     role: this.role,
     phone: this.phone,
     active: this.active,
+    purchaseCount: this.purchaseCount,
     bio: this.bio,
     specialties: this.specialties,
     createdAt: this.createdAt,

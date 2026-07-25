@@ -602,3 +602,13 @@ a { color:var(--sage-deep); }
   .payment-result-details dd { text-align:left; }
   .payment-result-actions,.payment-result-actions.three { flex-direction:column; }
 }
+
+.purchase-history-card { min-width:0; }
+.purchase-history-head { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.purchase-history-head h3 { margin-bottom:.25rem; }
+.purchase-history-head>div>span { color:var(--ink-soft); font-size:.67rem; overflow-wrap:anywhere; }
+.purchase-history-card dl { margin:1rem 0 0; }
+.purchase-history-card dl div { display:flex; justify-content:space-between; gap:1rem; padding:.45rem 0; border-bottom:1px solid var(--line); font-size:.75rem; }
+.purchase-history-card dl div:last-child { border:0; }
+.purchase-history-card dt { color:var(--ink-soft); }
+.purchase-history-card dd { margin:0; text-align:right; font-weight:600; }

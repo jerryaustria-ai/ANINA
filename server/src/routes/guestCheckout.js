@@ -7,6 +7,7 @@ import { fulfillGuestPurchase } from "../services/guestPurchase.js";
 import * as xendit from "../services/xendit.js";
 import { asyncHandler } from "../utils/http.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
+import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -88,6 +89,19 @@ router.post("/orders", asyncHandler(async (req, res) => {
   });
   await purchase.populate([{ path: "session", populate: [{ path: "instructor" }, { path: "room" }] }, { path: "tier" }]);
   res.status(201).json({ order: purchase.toPublic(), token: purchase.accessToken });
+}));
+
+// Authenticated customers can view every successful guest checkout associated
+// with their single email-based user account.
+router.get("/history/mine", requireAuth, asyncHandler(async (req, res) => {
+  const purchases = await GuestPurchase.find({
+    client: req.user._id,
+    paidAt: { $ne: null },
+  }).populate({
+    path: "session",
+    populate: [{ path: "instructor" }, { path: "room" }],
+  }).populate("tier").sort("-paidAt -createdAt");
+  res.json({ purchases: purchases.map((purchase) => purchase.toPublic()) });
 }));
 
 router.get("/orders/:id", asyncHandler(async (req, res) => {

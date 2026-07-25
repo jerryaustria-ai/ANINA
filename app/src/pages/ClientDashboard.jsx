@@ -24,25 +24,36 @@ function unavailableReason(session) {
   return null;
 }
 
+const purchaseMoney = (amount, currency = "PHP") =>
+  new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(Number(amount || 0));
+const purchaseValidity = (plan) => {
+  const count = plan?.intervalCount || 1;
+  const unit = String(plan?.interval || "MONTH").toLowerCase();
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+};
+
 export default function ClientDashboard() {
   const cal = useCalendar();
   const [sessions, setSessions] = useState([]);
   const [mine, setMine] = useState([]); // my bookings
   const [membership, setMembership] = useState(null);
+  const [purchases, setPurchases] = useState([]);
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
     const from = cal.range.from.toISOString();
     const to = cal.range.to.toISOString();
-    const [{ sessions }, { bookings }, mem] = await Promise.all([
+    const [{ sessions }, { bookings }, mem, purchaseHistory] = await Promise.all([
       api(`/sessions?from=${from}&to=${to}`),
       api("/bookings/mine"),
       api("/memberships/mine"),
+      api("/guest-checkout/history/mine"),
     ]);
     setSessions(sessions);
     setMine(bookings);
     setMembership(mem.membership);
+    setPurchases(purchaseHistory.purchases);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useEffect(() => {
@@ -179,6 +190,32 @@ export default function ClientDashboard() {
                 {booking.session.status === "cancelled" ? "Class Cancelled" : STATUS_LABEL[booking.session.status] || STATUS_LABEL[booking.status] || booking.status}
               </span>
             </div>
+          ))}
+        </div>
+      )}
+
+      <h2 style={{ margin: "1.6rem 0 0.8rem", fontWeight: 300 }}>Purchase history</h2>
+      {purchases.length === 0 ? <div className="empty">No successful package purchases yet.</div> : (
+        <div className="grid-cards">
+          {purchases.map((purchase) => (
+            <article className="card purchase-history-card" key={purchase.id}>
+              <div className="purchase-history-head">
+                <div><h3>{purchase.session?.title || "Class booking"}</h3>
+                  <span>{purchase.referenceId}</span></div>
+                <span className={"status-tag " + (purchase.status === "refunded" ? "declined" : "accepted")}>
+                  {purchase.status === "refunded" ? "Refunded" : "Paid"}
+                </span>
+              </div>
+              <dl>
+                <div><dt>Schedule</dt><dd>{purchase.session ? fmtRange(purchase.session.startAt, purchase.session.endAt) : "—"}</dd></div>
+                <div><dt>Purchased plan</dt><dd>{purchase.plan?.name || "—"}</dd></div>
+                <div><dt>Sessions</dt><dd>{purchase.plan?.unlimitedClasses ? "Unlimited" : (purchase.plan?.sessionCount || 1)}</dd></div>
+                <div><dt>Validity</dt><dd>{purchaseValidity(purchase.plan)}</dd></div>
+                <div><dt>Amount paid</dt><dd>{purchaseMoney(purchase.totalAmount, purchase.currency)}</dd></div>
+                <div><dt>Booking date</dt><dd>{new Date(purchase.createdAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</dd></div>
+                <div><dt>Payment date</dt><dd>{purchase.paidAt ? new Date(purchase.paidAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }) : "—"}</dd></div>
+              </dl>
+            </article>
           ))}
         </div>
       )}

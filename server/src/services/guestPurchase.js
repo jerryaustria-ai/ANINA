@@ -17,6 +17,30 @@ function periodEnd(tier) {
   return date;
 }
 
+async function findOrCreateCustomer(purchase) {
+  const update = {
+    $set: { name: purchase.fullName, phone: purchase.phone },
+    $setOnInsert: { role: "client", active: true },
+  };
+  try {
+    return await User.findOneAndUpdate(
+      { email: purchase.email },
+      update,
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    );
+  } catch (error) {
+    // A unique email index protects against two successful first purchases
+    // arriving at the same time. Re-read the winner instead of creating a
+    // duplicate customer.
+    if (error.code !== 11000) throw error;
+    return User.findOneAndUpdate(
+      { email: purchase.email },
+      { $set: { name: purchase.fullName, phone: purchase.phone } },
+      { new: true, runValidators: true }
+    );
+  }
+}
+
 async function performFulfillment(purchaseId, payment = {}) {
   let purchase = await GuestPurchase.findById(purchaseId).populate("tier session");
   if (!purchase) throw Object.assign(new Error("Purchase not found."), { status: 404 });
@@ -27,16 +51,7 @@ async function performFulfillment(purchaseId, payment = {}) {
   purchase.paymentId = payment.paymentId || purchase.paymentId;
   await purchase.save();
 
-  let client = await User.findOne({ email: purchase.email });
-  if (!client) {
-    client = await User.create({
-      name: purchase.fullName,
-      email: purchase.email,
-      phone: purchase.phone,
-      role: "client",
-      active: true,
-    });
-  }
+  const client = await findOrCreateCustomer(purchase);
 
   const session = await ClassSession.findById(purchase.session._id).populate("instructor room");
   if (!session) throw Object.assign(new Error("The selected class no longer exists."), { status: 409 });
@@ -91,6 +106,10 @@ async function performFulfillment(purchaseId, payment = {}) {
   purchase.membership = membership._id;
   purchase.status = bookingStatus === "accepted" ? "confirmed" : "waitlisted";
   await purchase.save();
+  await User.updateOne(
+    { _id: client._id },
+    { $set: { lastGuestPurchase: purchase._id }, $inc: { purchaseCount: 1 } }
+  );
 
   await Promise.all([
     createNotification({
