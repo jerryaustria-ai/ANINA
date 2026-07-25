@@ -17,7 +17,8 @@ router.get(
   })
 );
 
-const EDITABLE = ["name", "description", "amount", "currency", "interval", "intervalCount", "benefits", "active", "sortOrder"];
+const EDITABLE = ["name", "description", "amount", "currency", "interval", "intervalCount", "benefits",
+  "classTags", "sessionCount", "unlimitedClasses", "active", "sortOrder"];
 
 router.post(
   "/",

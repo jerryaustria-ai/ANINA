@@ -133,6 +133,11 @@ export default function ClientDashboard() {
           You need an active membership to book classes. <Link to="/dashboard/membership">View membership plans →</Link>
         </div>
       )}
+      {membership?.activeNow && membership.source === "guest_checkout" && (
+        <div className="status-notice success">
+          {membership.tier?.name} is active · {membership.unlimitedClasses ? "Unlimited classes" : `${membership.sessionsRemaining ?? 0} session credits remaining`}
+        </div>
+      )}
 
       <CalendarView
         cal={cal}
@@ -150,6 +155,7 @@ export default function ClientDashboard() {
               <h3>{b.session.title}</h3>
               <div className="sub">{fmtRange(b.session.startAt, b.session.endAt)}</div>
               <div className="sub">{b.session.instructor?.name} · {b.session.room?.name}</div>
+              {b.paymentStatus === "paid" && <div className="sub">Payment: Paid</div>}
               <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status]}</span>
                 <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" })

@@ -22,6 +22,9 @@ const bookingSchema = new mongoose.Schema(
     client: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     status: { type: String, enum: BOOKING_STATUSES, default: "pending", index: true },
     note: { type: String, default: "" }, // client's message to the instructor
+    source: { type: String, enum: ["client", "admin", "guest_checkout"], default: "client" },
+    paymentStatus: { type: String, enum: ["unpaid", "pending", "paid", "refunded"], default: "unpaid" },
+    purchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", default: null, index: true },
   },
   { timestamps: true }
 );
@@ -38,6 +41,9 @@ bookingSchema.methods.toPublic = function () {
     client: cl,
     status: this.status,
     note: this.note,
+    source: this.source,
+    paymentStatus: this.paymentStatus,
+    purchase: this.purchase,
     createdAt: this.createdAt,
   };
 };

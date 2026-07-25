@@ -11,6 +11,8 @@ import { assertScheduleBookable } from "../services/scheduleTime.js";
 import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { GuestPurchase } from "../models/GuestPurchase.js";
+import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -351,6 +353,20 @@ router.post(
       previousValue: previous,
     });
     await announceBooking(booking, booking.session, req.user._id, "cancelled");
+    if (booking.purchase) {
+      const purchase = await GuestPurchase.findById(booking.purchase);
+      if (purchase) {
+        purchase.status = "cancelled";
+        purchase.cancelledAt = new Date();
+        await purchase.save();
+        await sendPurchaseStatusEmailOnce(
+          purchase._id,
+          "booking_cancelled",
+          `booking-cancelled:${booking._id}:${purchase.cancelledAt.toISOString()}`,
+          { cancelledAt: purchase.cancelledAt }
+        ).catch((error) => console.warn("Booking cancellation email failed:", error.message));
+      }
+    }
     res.json({ booking: booking.toPublic() });
   })
 );

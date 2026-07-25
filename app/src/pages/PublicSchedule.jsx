@@ -84,8 +84,7 @@ export default function PublicSchedule() {
   function continueToBooking(session) {
     if (bookingState(session).disabled) return;
     if (!user) {
-      toast.info("Please log in or create an account to book this session.");
-      navigate(`/login?next=${encodeURIComponent(`/dashboard?schedule=${session.id}`)}`);
+      navigate(`/guest/book/${session.id}`);
       return;
     }
     if (user.role === "client") {

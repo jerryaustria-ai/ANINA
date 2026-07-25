@@ -451,7 +451,7 @@ function ScheduleView() {
             {selectedBookings.length === 0 ? <p className="meta-line">No active client bookings.</p> :
               selectedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
-                  <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status}</span></div>
+                  <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status}{booking.paymentStatus === "paid" ? " · Paid" : ""}</span></div>
                   <div className="schedule-booking-actions">
                     {!["cancelled", "declined"].includes(booking.status) &&
                       <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
@@ -995,7 +995,8 @@ function PeopleView() {
 }
 
 /* ---------- Membership tiers (admin-managed) ---------- */
-const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1, benefits: "", active: true, sortOrder: 0 };
+const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1,
+  benefits: "", classTags: "", sessionCount: 10, unlimitedClasses: false, active: true, sortOrder: 0 };
 function TiersView() {
   const [tiers, setTiers] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -1004,13 +1005,15 @@ function TiersView() {
   useEffect(() => { load(); }, []);
 
   function openEdit(t) {
-    setEdit(t ? { ...t, benefits: (t.benefits || []).join("\n") } : { ...blankTier });
+    setEdit(t ? { ...t, benefits: (t.benefits || []).join("\n"), classTags: (t.classTags || []).join(", ") } : { ...blankTier });
   }
   async function save() {
     setBusy(true);
     try {
       const body = { ...edit, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
-        benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean) };
+        sessionCount: edit.unlimitedClasses ? null : Number(edit.sessionCount || 1),
+        benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
+        classTags: String(edit.classTags || "").split(",").map((s) => s.trim()).filter(Boolean) };
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
       else await api("/tiers", { method: "POST", body });
       const wasEdit = !!edit.id;
@@ -1033,6 +1036,7 @@ function TiersView() {
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
               <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per">{fmtInterval(t.interval, t.intervalCount)}</span></p>
               {t.description && <div className="sub">{t.description}</div>}
+              <div className="sub">{t.unlimitedClasses ? "Unlimited classes" : `${t.sessionCount || 1} sessions`} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
             </div>
@@ -1054,6 +1058,14 @@ function TiersView() {
             <div className="field row">
               <div><label>Interval</label><select value={edit.interval} onChange={(e) => setEdit({ ...edit, interval: e.target.value })}><option value="DAY">Day</option><option value="WEEK">Week</option><option value="MONTH">Month</option><option value="YEAR">Year</option></select></div>
               <div><label>Every</label><input type="number" min="1" value={edit.intervalCount} onChange={(e) => setEdit({ ...edit, intervalCount: e.target.value })} /></div>
+            </div>
+            <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
+              <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
+            <div className="field row">
+              <div><label>Sessions included</label><input type="number" min="1" disabled={edit.unlimitedClasses}
+                value={edit.sessionCount} onChange={(e) => setEdit({ ...edit, sessionCount: e.target.value })} /></div>
+              <label style={{ alignSelf: "end", paddingBottom: ".65rem" }}><input type="checkbox" checked={edit.unlimitedClasses}
+                onChange={(e) => setEdit({ ...edit, unlimitedClasses: e.target.checked })} /> Unlimited classes</label>
             </div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
             {edit.id && <label style={{ fontSize: "0.9rem" }}><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Active</label>}

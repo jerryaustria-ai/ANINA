@@ -13,6 +13,8 @@ import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { Notification } from "../models/Notification.js";
 import { SessionAudit } from "../models/SessionAudit.js";
 import { createAuditLog } from "../services/audit.js";
+import { GuestPurchase } from "../models/GuestPurchase.js";
+import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 
 const router = Router();
 
@@ -20,6 +22,22 @@ const populate = (q) =>
   q.populate("instructor", "name email picture role").populate("room", "name color maxCapacity location");
 
 const ACTIVE_CLIENT_STATUSES = ["pending", "accepted", "approved", "confirmed", "booked", "waitlisted", "active"];
+
+async function emailGuestBookingCancellations(bookings, cancelledAt, eventPrefix) {
+  await Promise.all(bookings.filter((booking) => booking.purchase).map(async (booking) => {
+    const purchase = await GuestPurchase.findById(booking.purchase);
+    if (!purchase) return;
+    purchase.status = "cancelled";
+    purchase.cancelledAt = cancelledAt;
+    await purchase.save();
+    await sendPurchaseStatusEmailOnce(
+      purchase._id,
+      "booking_cancelled",
+      `${eventPrefix}:${booking._id}`,
+      { cancelledAt }
+    ).catch((error) => console.warn("Booking cancellation email failed:", error.message));
+  }));
+}
 
 function activeClientQuery(sessionId) {
   return {
@@ -671,6 +689,11 @@ router.post(
       { session: session._id, status: { $in: ["pending", "accepted", "waitlisted"] } },
       { $set: { status: "cancelled" } }
     );
+    await emailGuestBookingCancellations(
+      affectedBookings,
+      session.cancelledAt,
+      `session-cancelled:${session._id}:${session.cancelledAt.toISOString()}`
+    );
     session.acceptedCount = 0;
     await session.save();
     await createAuditLog({
@@ -767,6 +790,13 @@ router.put(
       }
     }
     if (operations.length) await Booking.bulkWrite(operations, { ordered: true });
+    const removedGuestBookings = existing.filter((booking) =>
+      removedIds.includes(booking.client.toString()) && booking.purchase);
+    await emailGuestBookingCancellations(
+      removedGuestBookings,
+      new Date(),
+      `roster-removed:${session._id}:${session.updatedAt.getTime()}`
+    );
     session.acceptedCount = clientIds.length;
     await session.save();
     await createAuditLog({

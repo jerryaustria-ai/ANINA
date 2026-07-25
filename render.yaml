@@ -25,3 +25,19 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: XENDIT_SECRET_KEY
+        sync: false
+      - key: XENDIT_WEBHOOK_TOKEN
+        sync: false
+      - key: VAT_RATE
+        value: "0"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_LOGO_URL
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: SUPPORT_PHONE
+        sync: false

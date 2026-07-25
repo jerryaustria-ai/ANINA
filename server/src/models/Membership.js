@@ -23,6 +23,11 @@ const membershipSchema = new mongoose.Schema(
     cycleCount: { type: Number, default: 0 },
     lastEvent: { type: String, default: "" },
     simulated: { type: Boolean, default: false }, // created in dev-simulation mode
+    source: { type: String, enum: ["membership", "guest_checkout"], default: "membership" },
+    sessionsIncluded: { type: Number, default: null },
+    sessionsRemaining: { type: Number, default: null },
+    unlimitedClasses: { type: Boolean, default: false },
+    validClassTags: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -44,6 +49,11 @@ membershipSchema.methods.toPublic = function () {
     currentPeriodEnd: this.currentPeriodEnd,
     cycleCount: this.cycleCount,
     simulated: this.simulated,
+    source: this.source,
+    sessionsIncluded: this.sessionsIncluded,
+    sessionsRemaining: this.sessionsRemaining,
+    unlimitedClasses: this.unlimitedClasses,
+    validClassTags: this.validClassTags,
     activeNow: this.isActiveNow(),
     createdAt: this.createdAt,
   };

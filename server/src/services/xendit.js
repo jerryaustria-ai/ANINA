@@ -115,6 +115,49 @@ export async function createSubscription({ referenceId, customerId, tier, succes
   };
 }
 
+// Create a hosted, one-time Payment Session for a guest package purchase.
+export async function createOneTimePaymentSession({ referenceId, customer, plan, successUrl, cancelUrl }) {
+  if (!isLive()) {
+    return { sessionId: `sim_pay_${referenceId}`, checkoutUrl: "", status: "ACTIVE", simulated: true };
+  }
+  const rawPhone = String(customer.phone || "").replace(/[^\d+]/g, "");
+  const mobileNumber = rawPhone.startsWith("0") ? `+63${rawPhone.slice(1)}`
+    : rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+  const data = await call("/sessions", {
+    body: {
+      reference_id: referenceId,
+      session_type: "PAY",
+      mode: "PAYMENT_LINK",
+      currency: plan.currency,
+      amount: plan.amount,
+      country: "PH",
+      customer: {
+        reference_id: `guest_${referenceId}`,
+        type: "INDIVIDUAL",
+        email: customer.email,
+        mobile_number: mobileNumber,
+        individual_detail: { given_names: customer.fullName },
+      },
+      items: [{
+        reference_id: String(plan.id),
+        name: plan.name,
+        category: "Wellness class package",
+        price: plan.amount,
+        quantity: 1,
+      }],
+      capture_method: "AUTOMATIC",
+      success_return_url: successUrl,
+      cancel_return_url: cancelUrl,
+    },
+  });
+  return {
+    sessionId: data.payment_session_id || data.id,
+    checkoutUrl: data.payment_link_url || data.actions?.find((action) => action.url)?.url || "",
+    status: data.status || "ACTIVE",
+    simulated: false,
+  };
+}
+
 export async function getSubscriptionStatus(remoteId, referenceId) {
   if (!isLive()) return { status: "simulation", planId: remoteId };
 
