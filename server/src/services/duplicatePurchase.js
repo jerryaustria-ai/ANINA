@@ -3,14 +3,12 @@ import { GuestPurchase } from "../models/GuestPurchase.js";
 import { Membership } from "../models/Membership.js";
 import { User } from "../models/User.js";
 
-const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-
 export async function findActiveDuplicate({ email, session, tier }) {
   const user = await User.findOne({ email: String(email || "").trim().toLowerCase() });
   if (!user) return null;
 
   const now = new Date();
-  const [membership, bookings] = await Promise.all([
+  const [membership, classBooking] = await Promise.all([
     Membership.findOne({
       client: user._id,
       tier: tier._id,
@@ -20,18 +18,12 @@ export async function findActiveDuplicate({ email, session, tier }) {
         { $or: [{ unlimitedClasses: true }, { sessionsRemaining: null }, { sessionsRemaining: { $gt: 0 } }] },
       ],
     }).populate("tier").sort("-createdAt"),
-    Booking.find({
+    Booking.findOne({
       client: user._id,
+      session: session._id,
       status: { $in: ["pending", "accepted", "waitlisted"] },
-    }).populate("session purchase").sort("-createdAt"),
+    }).populate("purchase").sort("-createdAt"),
   ]);
-
-  const className = normalize(session.title);
-  const classBooking = bookings.find((booking) =>
-    booking.session &&
-    new Date(booking.session.endAt) > now &&
-    normalize(booking.session.title) === className
-  );
 
   if (!membership && !classBooking) return null;
 
