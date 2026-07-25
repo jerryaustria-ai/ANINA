@@ -41,6 +41,44 @@ async function findOrCreateCustomer(purchase) {
   }
 }
 
+async function saveSuccessfulBookingHistory({ client, purchase, booking, membership, session }) {
+  const tier = purchase.tier;
+  const history = {
+    purchase: purchase._id,
+    booking: booking._id,
+    membership: membership._id,
+    bookingReference: purchase.referenceId,
+    customerName: purchase.fullName,
+    email: purchase.email,
+    phone: purchase.phone,
+    className: session.title,
+    scheduleStart: session.startAt,
+    scheduleEnd: session.endAt,
+    purchasedPlan: purchase.planSnapshot.name,
+    numberOfSessions: tier.unlimitedClasses ? null : (tier.sessionCount || 1),
+    unlimitedClasses: !!tier.unlimitedClasses,
+    validityInterval: tier.interval,
+    validityIntervalCount: tier.intervalCount || 1,
+    validUntil: membership.currentPeriodEnd,
+    amountPaid: purchase.totalAmount,
+    currency: purchase.currency,
+    paymentMethod: purchase.paymentMethod || "Xendit",
+    paymentStatus: "successful",
+    paymentDate: purchase.paidAt,
+    bookingDate: purchase.createdAt,
+  };
+
+  // The purchase condition makes webhook retries idempotent.
+  await User.updateOne(
+    { _id: client._id, "bookingHistory.purchase": { $ne: purchase._id } },
+    {
+      $push: { bookingHistory: history },
+      $set: { lastGuestPurchase: purchase._id },
+      $inc: { purchaseCount: 1 },
+    }
+  );
+}
+
 async function performFulfillment(purchaseId, payment = {}) {
   let purchase = await GuestPurchase.findById(purchaseId).populate("tier session");
   if (!purchase) throw Object.assign(new Error("Purchase not found."), { status: 404 });
@@ -106,10 +144,7 @@ async function performFulfillment(purchaseId, payment = {}) {
   purchase.membership = membership._id;
   purchase.status = bookingStatus === "accepted" ? "confirmed" : "waitlisted";
   await purchase.save();
-  await User.updateOne(
-    { _id: client._id },
-    { $set: { lastGuestPurchase: purchase._id }, $inc: { purchaseCount: 1 } }
-  );
+  await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
 
   await Promise.all([
     createNotification({
@@ -155,7 +190,20 @@ export async function fulfillGuestPurchase(purchaseId, payment = {}) {
     { $set: { status: "pending_confirmation", processingAt: new Date() } },
     { new: true }
   );
-  if (!locked) return GuestPurchase.findById(purchaseId).populate("session tier booking membership");
+  if (!locked) {
+    const existing = await GuestPurchase.findById(purchaseId).populate("session tier booking membership client");
+    if (existing && ["confirmed", "waitlisted"].includes(existing.status) &&
+        existing.client && existing.booking && existing.membership && existing.session) {
+      await saveSuccessfulBookingHistory({
+        client: existing.client,
+        purchase: existing,
+        booking: existing.booking,
+        membership: existing.membership,
+        session: existing.session,
+      });
+    }
+    return existing;
+  }
   try {
     const purchase = await performFulfillment(purchaseId, payment);
     purchase.processingAt = null;

@@ -54,6 +54,13 @@ router.post(
           return res.json({ received: true, matched: true, status: purchase.status });
         }
         purchase.paymentRequestId = data.payment_request_id || purchase.paymentRequestId;
+        purchase.paymentMethod = String(
+          data.payment_method?.type ||
+          data.payment_method_type ||
+          data.channel_code ||
+          data.payment_channel ||
+          "Xendit"
+        );
         purchase.receiptUrl = data.receipt_url || purchase.receiptUrl;
         await purchase.save();
         const fulfilled = await fulfillGuestPurchase(purchase._id, {
