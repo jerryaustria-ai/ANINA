@@ -1026,7 +1026,7 @@ function TiersView() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>Class plans</h1><p>One-time class packages with a fixed validity period and session allowance.</p></div>
+        <div><h1>Membership / Class Plans</h1><p>Plans available for one-time purchase, recurring billing, or both purchase flows.</p></div>
         <button className="btn" onClick={() => openEdit(null)}>+ Add plan</button>
       </div>
 
@@ -1035,7 +1035,7 @@ function TiersView() {
           {tiers.map((t) => (
             <div className="card" key={t.id} style={{ opacity: t.active ? 1 : 0.55 }}>
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
-              <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> One-Time Payment</span></p>
+              <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> Plan Amount</span></p>
               {t.description && <div className="sub">{t.description}</div>}
               <div className="sub">{t.unlimitedClasses ? "Unlimited classes" : `${t.sessionCount || 1} sessions`} · Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
@@ -1080,7 +1080,7 @@ function TiersView() {
 /* ---------- One-time class plan purchases ---------- */
 function MembershipsView() {
   const [list, setList] = useState([]);
-  const load = () => api("/memberships").then(({ purchases }) => setList(purchases));
+  const load = () => api("/memberships").then(({ memberships }) => setList(memberships));
   useEffect(() => { load(); }, []);
   const date = (value) => value ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "—";
   const sessions = (value, unlimited) => unlimited ? "Unlimited" : (value ?? "—");
@@ -1090,22 +1090,27 @@ function MembershipsView() {
 
   return (
     <div className="page">
-      <div className="page-head"><div><h1>Class Plan Purchases</h1><p>Successful one-time payments, plan balances, and validity status.</p></div></div>
-      {list.length === 0 ? <div className="empty">No successful class plan purchases yet.</div> : (
+      <div className="page-head"><div><h1>Memberships</h1><p>One-time class plans and recurring subscriptions in one client ledger.</p></div></div>
+      {list.length === 0 ? <div className="empty">No memberships yet.</div> : (
         <div className="purchase-table-wrap">
           <table className="purchase-table">
-            <thead><tr><th>Client</th><th>Purchased Plan</th><th>Class</th><th>One-Time Amount</th>
-              <th>Included</th><th>Remaining</th><th>Start</th><th>Expiration</th>
+            <thead><tr><th>Client</th><th>Membership / Plan</th><th>Type</th><th>Class</th><th>Amount</th>
+              <th>Sessions / Billing</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
               <th>Payment</th><th>Plan Status</th><th /></tr></thead>
             <tbody>{list.map((record) => <tr key={record.id}>
               <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
                 <small>{record.client?.email}</small></td>
-              <td>{record.purchasedPlan}</td><td>{record.className}</td>
-              <td>{fmtMoney(record.amountPaid, record.currency)}<small>One-Time Payment</small></td>
-              <td>{sessions(record.includedSessions, record.unlimitedClasses)}</td>
-              <td>{sessions(record.remainingSessions, record.unlimitedClasses)}</td>
-              <td>{date(record.startDate)}</td><td>{date(record.expirationDate)}</td>
-              <td><span className="status-tag accepted">{record.paymentStatus}</span></td>
+              <td>{record.purchasedPlan}</td>
+              <td><span className={"status-tag " + (record.membershipType === "one_time" ? "pending" : "accepted")}>{record.membershipTypeLabel}</span></td>
+              <td>{record.className}</td>
+              <td>{fmtMoney(record.amountPaid, record.currency)}
+                <small>{record.membershipType === "one_time" ? "One-Time Payment" : `per ${record.billingCycle}`}</small></td>
+              <td>{record.membershipType === "one_time"
+                ? <>{sessions(record.includedSessions, record.unlimitedClasses)} included<small>{sessions(record.usedSessions, record.unlimitedClasses)} used · {sessions(record.remainingSessions, record.unlimitedClasses)} remaining</small></>
+                : <>Billing cycle<small>{record.billingCycle}</small></>}</td>
+              <td>{record.membershipType === "one_time" ? record.validityPeriod : record.renewalStatus}</td>
+              <td>{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
+              <td><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>
               <td><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
               <td><Link className="btn ghost sm" to={`/dashboard/clients/${record.client?.id}`}>View Details</Link></td>
             </tr>)}</tbody>

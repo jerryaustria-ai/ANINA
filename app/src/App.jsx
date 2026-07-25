@@ -18,9 +18,9 @@ function Nav() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const tabs = {
-    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Class Plans"]],
+    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Memberships"]],
     instructor: [["/dashboard", "My Classes"]],
-    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Plan Purchases"]],
+    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
   }[user.role] || [];
 
   return (

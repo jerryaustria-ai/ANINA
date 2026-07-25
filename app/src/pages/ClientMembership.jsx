@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
 import { api } from "../api.js";
-import { fmtMoney, fmtRange } from "../util.js";
+import { fmtInterval, fmtMoney, fmtRange } from "../util.js";
 
 const date = (value) => value
   ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" })
@@ -13,23 +13,51 @@ const validity = (plan) => plan
 
 export default function ClientMembership() {
   const [membership, setMembership] = useState(null);
+  const [recurring, setRecurring] = useState(null);
   const [purchases, setPurchases] = useState([]);
+  const [tiers, setTiers] = useState([]);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    Promise.all([api("/memberships/mine"), api("/guest-checkout/history/mine")])
-      .then(([plan, history]) => {
-        setMembership(plan.membership?.source === "guest_checkout" ? plan.membership : null);
-        setPurchases(history.purchases || []);
-      })
-      .catch((error) => toast.error(error.message));
-  }, []);
+  async function load() {
+    const [plan, history, tierData] = await Promise.all([
+      api("/memberships/mine"), api("/guest-checkout/history/mine"), api("/tiers"),
+    ]);
+    setMembership((plan.memberships || []).find((item) => item.source === "guest_checkout" && item.activeNow) || null);
+    setRecurring((plan.memberships || []).find((item) =>
+      item.source === "membership" && ["active", "pending", "past_due"].includes(item.status)) || null);
+    setPurchases(history.purchases || []);
+    setTiers(tierData.tiers || []);
+  }
+  useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
 
   const active = membership?.activeNow &&
     (membership.unlimitedClasses || membership.sessionsRemaining == null || membership.sessionsRemaining > 0);
 
+  async function subscribe(tierId) {
+    setBusy(true);
+    try {
+      const result = await api("/memberships/subscribe", { method: "POST", body: { tierId } });
+      await load();
+      if (result.checkoutUrl) window.location.href = result.checkoutUrl;
+      else toast.info("Recurring subscription created in simulation mode.");
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelRecurring() {
+    if (!window.confirm("Cancel this recurring subscription? Future renewals will stop according to the cancellation policy.")) return;
+    setBusy(true);
+    try {
+      await api(`/memberships/${recurring.id}/cancel`, { method: "POST" });
+      await load();
+      toast.success("Recurring subscription cancelled.");
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+
   return <div className="page">
-    <div className="page-head"><div><h1>My Class Plans</h1>
-      <p>One-time class plan purchases, remaining sessions, and payment history.</p></div>
+    <div className="page-head"><div><h1>My Memberships</h1>
+      <p>One-time class plans and recurring subscriptions in one place.</p></div>
       <Link className="btn" to="/schedule">Browse Classes</Link></div>
 
     <h2 style={{ margin: "0 0 .8rem", fontWeight: 300 }}>Current Plan</h2>
@@ -43,6 +71,25 @@ export default function ClientMembership() {
           : `${membership.sessionsRemaining ?? 0} of ${membership.sessionsIncluded ?? "—"} sessions remaining`}</div>
         <div className="sub">Expires {date(membership.currentPeriodEnd)}</div>
       </article>}
+
+    <h2 style={{ margin: "1.5rem 0 .8rem", fontWeight: 300 }}>Recurring Subscription</h2>
+    {recurring ? <article className="card" style={{ marginBottom: "1.5rem" }}>
+      <div className="purchase-history-head"><div><h3>{recurring.tier?.name}</h3><span>{recurring.referenceId}</span></div>
+        <span className={"status-tag " + (recurring.status === "active" ? "accepted" : "pending")}>{recurring.status}</span></div>
+      <p className="tier-amount">{fmtMoney(recurring.tier?.amount, recurring.tier?.currency)}
+        <span className="tier-per">{fmtInterval(recurring.tier?.interval, recurring.tier?.intervalCount)}</span></p>
+      <div className="sub">Billing cycle: every {recurring.tier?.intervalCount || 1} {String(recurring.tier?.interval || "month").toLowerCase()}</div>
+      <div className="sub">Next billing date: {date(recurring.currentPeriodEnd)}</div>
+      <button className="btn danger sm" style={{ marginTop: ".8rem" }} disabled={busy} onClick={cancelRecurring}>Cancel Subscription</button>
+    </article> : <div className="grid-cards" style={{ marginBottom: "1.5rem" }}>
+      {tiers.map((tier) => <article className="card" key={tier.id}><h3>{tier.name}</h3>
+        <p className="tier-amount">{fmtMoney(tier.amount, tier.currency)}
+          <span className="tier-per">{fmtInterval(tier.interval, tier.intervalCount)}</span></p>
+        <div className="sub">Recurring billing every {tier.intervalCount || 1} {String(tier.interval).toLowerCase()}</div>
+        <button className="btn" style={{ marginTop: ".8rem", width: "100%" }} disabled={busy}
+          onClick={() => subscribe(tier.id)}>Start Recurring Subscription</button>
+      </article>)}
+    </div>}
 
     <h2 style={{ margin: "0 0 .8rem", fontWeight: 300 }}>Purchase History</h2>
     {!purchases.length ? <div className="empty">No successful class plan purchases yet.</div> :
