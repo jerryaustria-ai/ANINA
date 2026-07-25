@@ -8,9 +8,20 @@ export default function PaymentResult() {
   const navigate = useNavigate();
   const token = params.get("token") || sessionStorage.getItem(`guest_order_${orderId}`) || "";
   const returnState = params.get("return") || "";
+  const processingKey = `guest_processing_shown_${orderId}`;
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
   const [checks, setChecks] = useState(0);
+  const [showReturnProcessing, setShowReturnProcessing] = useState(
+    returnState === "success" && sessionStorage.getItem(processingKey) !== "true"
+  );
+
+  useEffect(() => {
+    if (!showReturnProcessing) return undefined;
+    sessionStorage.setItem(processingKey, "true");
+    const timer = setTimeout(() => setShowReturnProcessing(false), 2500);
+    return () => clearTimeout(timer);
+  }, [processingKey, showReturnProcessing]);
 
   useEffect(() => {
     let active = true;
@@ -34,12 +45,13 @@ export default function PaymentResult() {
   }, [orderId, token, checks, returnState]);
 
   const outcome = useMemo(() => {
+    if (showReturnProcessing) return "pending";
     if (["confirmed", "waitlisted"].includes(order?.status)) return "success";
     if (order?.status === "declined") return "declined";
     if (["failed", "cancelled"].includes(order?.status) || returnState === "error") return "failed";
     if (returnState === "cancelled" && checks >= 2) return "declined";
     return "pending";
-  }, [order?.status, returnState, checks]);
+  }, [order?.status, returnState, checks, showReturnProcessing]);
 
   if (error) return <div className="guest-state error"><p>{error}</p><Link to="/">Return to Home</Link></div>;
   if (!order) return <div className="guest-state">Loading payment result…</div>;
