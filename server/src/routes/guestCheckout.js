@@ -120,7 +120,24 @@ router.get("/history/mine", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 router.get("/orders/:id", asyncHandler(async (req, res) => {
-  const purchase = await loadAuthorizedOrder(req);
+  let purchase = await loadAuthorizedOrder(req);
+  if (purchase.status === "payment_pending" && purchase.xenditSessionId) {
+    try {
+      const remote = await xendit.getOneTimePaymentSession(purchase.xenditSessionId);
+      const referenceMatches = remote.simulated || remote.referenceId === purchase.referenceId;
+      const amountMatches = remote.amount == null || Number(remote.amount) === Number(purchase.totalAmount);
+      const currencyMatches = !remote.currency || remote.currency === purchase.currency;
+      if (remote.status === "COMPLETED" && referenceMatches && amountMatches && currencyMatches) {
+        purchase.paymentRequestId = remote.paymentRequestId || purchase.paymentRequestId;
+        purchase.paymentMethod ||= "Xendit";
+        await purchase.save();
+        purchase = await fulfillGuestPurchase(purchase._id, { paymentId: remote.paymentId });
+      }
+    } catch (error) {
+      // Keep the order pending and allow the normal webhook/poll retry path.
+      console.warn("Payment-session reconciliation failed:", error.message);
+    }
+  }
   res.json({ order: purchase.toPublic() });
 }));
 

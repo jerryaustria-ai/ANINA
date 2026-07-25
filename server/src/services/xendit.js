@@ -172,6 +172,21 @@ export async function createOneTimePaymentSession({ referenceId, customer, plan,
   };
 }
 
+// Read-only verification used when the browser returns before a webhook arrives.
+// This keeps fulfillment reliable without trusting query-string return values.
+export async function getOneTimePaymentSession(sessionId) {
+  if (!isLive()) return { status: "COMPLETED", simulated: true };
+  const data = await call(`/sessions/${encodeURIComponent(sessionId)}`, { method: "GET" });
+  return {
+    status: String(data.status || "").toUpperCase(),
+    referenceId: data.reference_id || "",
+    paymentId: data.payment_id || data.payment_request_id || "",
+    paymentRequestId: data.payment_request_id || "",
+    amount: data.amount,
+    currency: data.currency,
+  };
+}
+
 export async function getSubscriptionStatus(remoteId, referenceId) {
   if (!isLive()) return { status: "simulation", planId: remoteId };
 
