@@ -55,6 +55,7 @@ guestPurchaseSchema.methods.toPublic = function () {
   const tier = this.tier?.toPublic ? this.tier.toPublic() : this.tier;
   return {
     id: this._id,
+    referenceId: this.referenceId,
     fullName: this.fullName,
     email: this.email,
     phone: this.phone,
@@ -72,6 +73,8 @@ guestPurchaseSchema.methods.toPublic = function () {
     failureReason: this.failureReason,
     refundedAt: this.refundedAt,
     refundedAmount: this.refundedAmount,
+    receiptUrl: this.receiptUrl,
+    hasLinkedAccount: !!this.client,
     booking: this.booking,
     membership: this.membership,
     emailStatus: this.emailStatus,

@@ -123,6 +123,12 @@ export async function createOneTimePaymentSession({ referenceId, customer, plan,
   const rawPhone = String(customer.phone || "").replace(/[^\d+]/g, "");
   const mobileNumber = rawPhone.startsWith("0") ? `+63${rawPhone.slice(1)}`
     : rawPhone.startsWith("+") ? rawPhone : `+${rawPhone}`;
+  const nameParts = String(customer.fullName || "Guest")
+    .normalize("NFKD").replace(/[^\w\s]/g, "").replaceAll("_", " ")
+    .trim().split(/\s+/).filter(Boolean);
+  const surname = nameParts.length > 1 ? nameParts.pop().slice(0, 50) : "";
+  const givenNames = (nameParts.join(" ") || surname || "Guest").slice(0, 50);
+  const customerReference = `guest${referenceId}`.replace(/[^a-zA-Z0-9]/g, "").slice(0, 255);
   const data = await call("/sessions", {
     body: {
       reference_id: referenceId,
@@ -132,20 +138,28 @@ export async function createOneTimePaymentSession({ referenceId, customer, plan,
       amount: plan.amount,
       country: "PH",
       customer: {
-        reference_id: `guest_${referenceId}`,
+        reference_id: customerReference,
         type: "INDIVIDUAL",
         email: customer.email,
         mobile_number: mobileNumber,
-        individual_detail: { given_names: customer.fullName },
+        individual_detail: {
+          given_names: givenNames,
+          ...(surname && surname !== givenNames ? { surname } : {}),
+        },
       },
       items: [{
         reference_id: String(plan.id),
-        name: plan.name,
-        category: "Wellness class package",
-        price: plan.amount,
+        name: String(plan.name).slice(0, 255),
+        description: String(plan.description || `${plan.name} wellness class package`).slice(0, 255),
+        type: "DIGITAL_SERVICE",
+        category: "WELLNESS_CLASS_PACKAGE",
+        net_unit_amount: plan.amount,
         quantity: 1,
+        currency: plan.currency,
       }],
       capture_method: "AUTOMATIC",
+      locale: "en",
+      description: `ANINA booking package: ${plan.name}`,
       success_return_url: successUrl,
       cancel_return_url: cancelUrl,
     },

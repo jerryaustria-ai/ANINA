@@ -11,6 +11,7 @@ import Landing from "./pages/Landing.jsx";
 import PublicSchedule from "./pages/PublicSchedule.jsx";
 import GuestBooking from "./pages/GuestBooking.jsx";
 import GuestCheckout from "./pages/GuestCheckout.jsx";
+import PaymentResult from "./pages/PaymentResult.jsx";
 
 function Nav() {
   const { user, logout } = useAuth();
@@ -83,6 +84,7 @@ export default function App() {
     <Route path="/schedule" element={<PublicSchedule />} />
     <Route path="/guest/book/:sessionId" element={<GuestBooking />} />
     <Route path="/guest/checkout/:orderId" element={<GuestCheckout />} />
+    <Route path="/guest/payment-result/:orderId" element={<PaymentResult />} />
     <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
     <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <Login mode="register" />} />
     <Route path="/dashboard/*" element={<ProtectedDashboard />} />

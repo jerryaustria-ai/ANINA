@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { api } from "../api.js";
 import { fmtTime } from "../util.js";
@@ -14,6 +14,7 @@ function validity(plan) {
 
 export default function GuestCheckout() {
   const { orderId } = useParams();
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = params.get("token") || sessionStorage.getItem(`guest_order_${orderId}`) || "";
   const [order, setOrder] = useState(null);
@@ -44,8 +45,8 @@ export default function GuestCheckout() {
         const completed = await api(`/guest-checkout/orders/${orderId}/simulate-success`, {
           method: "POST", body: { token },
         });
-        setOrder(completed.order);
         toast.success("Simulated payment completed and booking created.");
+        navigate(`/guest/payment-result/${orderId}?token=${encodeURIComponent(token)}&return=success`);
       } else if (result.checkoutUrl) {
         window.location.assign(result.checkoutUrl);
       } else {
@@ -53,6 +54,8 @@ export default function GuestCheckout() {
       }
     } catch (err) {
       toast.error(err.message);
+      sessionStorage.setItem(`guest_payment_error_${orderId}`, err.message);
+      navigate(`/guest/payment-result/${orderId}?token=${encodeURIComponent(token)}&return=error`);
     } finally {
       setWorking(false);
     }

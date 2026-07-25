@@ -112,8 +112,8 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
       referenceId: purchase.referenceId,
       customer: purchase,
       plan: purchase.planSnapshot,
-      successUrl: `${appUrl}/guest/checkout/${purchase._id}?token=${purchase.accessToken}&payment=success`,
-      cancelUrl: `${appUrl}/guest/checkout/${purchase._id}?token=${purchase.accessToken}&payment=cancelled`,
+      successUrl: `${appUrl}/guest/payment-result/${purchase._id}?token=${purchase.accessToken}&return=success`,
+      cancelUrl: `${appUrl}/guest/payment-result/${purchase._id}?token=${purchase.accessToken}&return=cancelled`,
     });
     purchase.xenditSessionId = payment.sessionId;
     purchase.checkoutUrl = payment.checkoutUrl;
