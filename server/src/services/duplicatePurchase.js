@@ -8,7 +8,7 @@ export async function findActiveDuplicate({ email, session, tier }) {
   if (!user) return null;
 
   const now = new Date();
-  const [membership, classBooking] = await Promise.all([
+  const [membership, sameSessionBooking] = await Promise.all([
     Membership.findOne({
       client: user._id,
       tier: tier._id,
@@ -24,6 +24,15 @@ export async function findActiveDuplicate({ email, session, tier }) {
       status: { $in: ["pending", "accepted", "waitlisted"] },
     }).populate("purchase").sort("-createdAt"),
   ]);
+
+  // A session may offer multiple plans. Treat it as the exact same booked
+  // class only when its linked purchase uses the selected plan as well.
+  // Legacy/non-purchase bookings have no plan ID, so their active seat still
+  // blocks another booking for that exact session.
+  const bookedPlanId = sameSessionBooking?.purchase?.tier;
+  const classBooking = sameSessionBooking && (
+    !bookedPlanId || String(bookedPlanId) === String(tier._id)
+  ) ? sameSessionBooking : null;
 
   if (!membership && !classBooking) return null;
 
