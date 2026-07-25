@@ -129,7 +129,7 @@ export default function GuestBooking() {
           onClick={() => { setDuplicate(null); createOrder(true); }}>Continue Anyway</button>}
       </>}
     >
-      <p>You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.</p>
+      <p>You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one.</p>
       <dl className="duplicate-details">
         {duplicate?.existingPlanName && <div><dt>Existing Plan Name</dt><dd>{duplicate.existingPlanName}</dd></div>}
         {duplicate?.remainingSessions != null && <div><dt>Remaining Sessions</dt><dd>{duplicate.remainingSessions}</dd></div>}

@@ -12,14 +12,15 @@ import PublicSchedule from "./pages/PublicSchedule.jsx";
 import GuestBooking from "./pages/GuestBooking.jsx";
 import GuestCheckout from "./pages/GuestCheckout.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
+import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
 
 function Nav() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const tabs = {
-    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "Membership"]],
+    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Class Plans"]],
     instructor: [["/dashboard", "My Classes"]],
-    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Tiers"], ["/dashboard/memberships", "Memberships"]],
+    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Plan Purchases"]],
   }[user.role] || [];
 
   return (
@@ -62,6 +63,7 @@ function Dashboard() {
             <Route path="people" element={<AdminDashboard view="people" />} />
             <Route path="tiers" element={<AdminDashboard view="tiers" />} />
             <Route path="memberships" element={<AdminDashboard view="memberships" />} />
+            <Route path="clients/:clientId" element={<ClientRecordDetails />} />
           </>
         )}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

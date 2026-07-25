@@ -45,6 +45,7 @@ membershipSchema.methods.toPublic = function () {
     client: cl,
     tier,
     status: this.status,
+    referenceId: this.referenceId,
     checkoutUrl: this.checkoutUrl,
     currentPeriodEnd: this.currentPeriodEnd,
     cycleCount: this.cycleCount,

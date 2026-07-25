@@ -83,7 +83,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   const overrideRequested = mayOverride && req.body.continueAnyway === true;
   if (duplicate && !overrideRequested) {
     return res.status(409).json({
-      error: "You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.",
+      error: "You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one.",
       code: "DUPLICATE_ACTIVE_PURCHASE",
       details: { ...duplicate, allowAdminOverride: mayOverride },
     });
@@ -153,7 +153,7 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
     });
     if (duplicate) {
       return res.status(409).json({
-        error: "You already have an active booking or subscription for this class or plan. Please review your existing booking before purchasing another one.",
+        error: "You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one.",
         code: "DUPLICATE_ACTIVE_PURCHASE",
         details: duplicate,
       });

@@ -4,8 +4,9 @@ import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
-import { fmtRange, fmtMoney, fmtInterval, STATUS_LABEL, toLocalInput } from "../util.js";
+import { fmtRange, fmtMoney, STATUS_LABEL, toLocalInput } from "../util.js";
 import { toast } from "react-toastify";
+import { Link } from "react-router-dom";
 
 export default function AdminDashboard({ view }) {
   if (view === "rooms") return <RoomsView />;
@@ -1017,7 +1018,7 @@ function TiersView() {
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
       else await api("/tiers", { method: "POST", body });
       const wasEdit = !!edit.id;
-      setEdit(null); await load(); toast.success(wasEdit ? "Membership tier updated." : "Membership tier created.");
+      setEdit(null); await load(); toast.success(wasEdit ? "Class plan updated." : "Class plan created.");
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
@@ -1025,18 +1026,18 @@ function TiersView() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>Membership tiers</h1><p>Plans clients can subscribe to. Amounts bill via Xendit on the interval you set.</p></div>
-        <button className="btn" onClick={() => openEdit(null)}>+ Add tier</button>
+        <div><h1>Class plans</h1><p>One-time class packages with a fixed validity period and session allowance.</p></div>
+        <button className="btn" onClick={() => openEdit(null)}>+ Add plan</button>
       </div>
 
-      {tiers.length === 0 ? <div className="empty">No tiers yet. Add one to let clients subscribe.</div> : (
+      {tiers.length === 0 ? <div className="empty">No class plans yet.</div> : (
         <div className="grid-cards">
           {tiers.map((t) => (
             <div className="card" key={t.id} style={{ opacity: t.active ? 1 : 0.55 }}>
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
-              <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per">{fmtInterval(t.interval, t.intervalCount)}</span></p>
+              <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> One-Time Payment</span></p>
               {t.description && <div className="sub">{t.description}</div>}
-              <div className="sub">{t.unlimitedClasses ? "Unlimited classes" : `${t.sessionCount || 1} sessions`} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
+              <div className="sub">{t.unlimitedClasses ? "Unlimited classes" : `${t.sessionCount || 1} sessions`} · Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
             </div>
@@ -1044,7 +1045,7 @@ function TiersView() {
         </div>
       )}
 
-      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit tier" : "Add tier"}
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit class plan" : "Add class plan"}
         footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
           <button className="btn" onClick={save} disabled={busy || !edit?.name}>Save</button></>}>
         {edit && (
@@ -1056,8 +1057,8 @@ function TiersView() {
               <div><label>Currency</label><select value={edit.currency} onChange={(e) => setEdit({ ...edit, currency: e.target.value })}><option>PHP</option><option>IDR</option><option>USD</option></select></div>
             </div>
             <div className="field row">
-              <div><label>Interval</label><select value={edit.interval} onChange={(e) => setEdit({ ...edit, interval: e.target.value })}><option value="DAY">Day</option><option value="WEEK">Week</option><option value="MONTH">Month</option><option value="YEAR">Year</option></select></div>
-              <div><label>Every</label><input type="number" min="1" value={edit.intervalCount} onChange={(e) => setEdit({ ...edit, intervalCount: e.target.value })} /></div>
+              <div><label>Validity unit</label><select value={edit.interval} onChange={(e) => setEdit({ ...edit, interval: e.target.value })}><option value="DAY">Day</option><option value="WEEK">Week</option><option value="MONTH">Month</option><option value="YEAR">Year</option></select></div>
+              <div><label>Valid for</label><input type="number" min="1" value={edit.intervalCount} onChange={(e) => setEdit({ ...edit, intervalCount: e.target.value })} /></div>
             </div>
             <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
               <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
@@ -1076,37 +1077,40 @@ function TiersView() {
   );
 }
 
-/* ---------- Memberships monitor ---------- */
+/* ---------- One-time class plan purchases ---------- */
 function MembershipsView() {
   const [list, setList] = useState([]);
-  const load = () => api("/memberships").then(({ memberships }) => setList(memberships));
+  const load = () => api("/memberships").then(({ purchases }) => setList(purchases));
   useEffect(() => { load(); }, []);
-
-  async function cancel(m) {
-    if (!window.confirm(`Cancel ${m.client?.name}'s membership?`)) return;
-    try { await api(`/memberships/${m.id}/cancel`, { method: "POST" }); await load(); toast.success("Membership cancelled."); }
-    catch (e) { toast.error(e.message); }
-  }
-  const tag = (s) => s === "active" ? "accepted" : s === "past_due" ? "cancelled" : s === "cancelled" || s === "inactive" ? "declined" : "pending";
+  const date = (value) => value ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "—";
+  const sessions = (value, unlimited) => unlimited ? "Unlimited" : (value ?? "—");
+  const tag = (status) => status === "Active" ? "accepted"
+    : status === "Fully Used" ? "pending"
+      : ["Expired", "Cancelled"].includes(status) ? "cancelled" : "declined";
 
   return (
     <div className="page">
-      <div className="page-head"><div><h1>Memberships</h1><p>Every client subscription and its billing status.</p></div></div>
-      {list.length === 0 ? <div className="empty">No memberships yet.</div> : (
-        <ul className="roster">
-          {list.map((m) => (
-            <li key={m.id}>
-              <Avatar src={m.client?.picture} name={m.client?.name} size={34} />
-              <div className="who"><div className="nm">{m.client?.name}</div><div className="em">{m.client?.email}</div></div>
-              <div style={{ textAlign: "right", minWidth: 130 }}>
-                <div className="nm">{m.tier?.name}</div>
-                <div className="em">{fmtMoney(m.tier?.amount, m.tier?.currency)}{fmtInterval(m.tier?.interval, m.tier?.intervalCount)}</div>
-              </div>
-              <span className={"status-tag " + tag(m.status)}>{m.status.replace("_", " ")}</span>
-              {["active", "pending", "past_due"].includes(m.status) && <button className="btn danger sm" onClick={() => cancel(m)}>Cancel</button>}
-            </li>
-          ))}
-        </ul>
+      <div className="page-head"><div><h1>Class Plan Purchases</h1><p>Successful one-time payments, plan balances, and validity status.</p></div></div>
+      {list.length === 0 ? <div className="empty">No successful class plan purchases yet.</div> : (
+        <div className="purchase-table-wrap">
+          <table className="purchase-table">
+            <thead><tr><th>Client</th><th>Purchased Plan</th><th>Class</th><th>One-Time Amount</th>
+              <th>Included</th><th>Remaining</th><th>Start</th><th>Expiration</th>
+              <th>Payment</th><th>Plan Status</th><th /></tr></thead>
+            <tbody>{list.map((record) => <tr key={record.id}>
+              <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
+                <small>{record.client?.email}</small></td>
+              <td>{record.purchasedPlan}</td><td>{record.className}</td>
+              <td>{fmtMoney(record.amountPaid, record.currency)}<small>One-Time Payment</small></td>
+              <td>{sessions(record.includedSessions, record.unlimitedClasses)}</td>
+              <td>{sessions(record.remainingSessions, record.unlimitedClasses)}</td>
+              <td>{date(record.startDate)}</td><td>{date(record.expirationDate)}</td>
+              <td><span className="status-tag accepted">{record.paymentStatus}</span></td>
+              <td><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
+              <td><Link className="btn ghost sm" to={`/dashboard/clients/${record.client?.id}`}>View Details</Link></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
       )}
     </div>
   );

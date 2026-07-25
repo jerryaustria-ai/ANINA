@@ -1,26 +1,84 @@
 import { Router } from "express";
 import { Membership } from "../models/Membership.js";
-import { MembershipTier } from "../models/MembershipTier.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import * as xendit from "../services/xendit.js";
 import { applyEvent } from "../services/membership.js";
+import { GuestPurchase } from "../models/GuestPurchase.js";
+import { User } from "../models/User.js";
 
 const router = Router();
 router.use(requireAuth);
 
 const allowDevBilling = () => process.env.XENDIT_SIMULATION === "true" && !xendit.isLive();
 
-function appUrl(req) {
-  const configured = String(process.env.APP_BASE_URL || "").replace(/\/$/, "");
-  // Xendit requires HTTPS return URLs. Ignore a stale localhost/http value on
-  // Render and derive the public origin from its forwarded request headers.
-  if (/^https:\/\//i.test(configured)) return configured;
-  const protocol = String(req.get("x-forwarded-proto") || req.protocol).split(",")[0].trim();
-  const host = req.get("x-forwarded-host") || req.get("host");
-  return `${protocol}://${host}`;
+function oneTimePlanStatus(membership) {
+  if (!membership) return "Inactive";
+  if (membership.status === "cancelled") return "Cancelled";
+  if (membership.status !== "active") return "Inactive";
+  if (membership.currentPeriodEnd && new Date(membership.currentPeriodEnd) <= new Date()) return "Expired";
+  if (!membership.unlimitedClasses && Number(membership.sessionsRemaining) <= 0) return "Fully Used";
+  return "Active";
 }
+
+function oneTimePurchaseRecord(purchase) {
+  const membership = purchase.membership;
+  const booking = purchase.booking;
+  const session = purchase.session;
+  const included = membership?.sessionsIncluded ??
+    (purchase.planSnapshot?.unlimitedClasses ? null : (purchase.planSnapshot?.sessionCount || 1));
+  const remaining = membership?.sessionsRemaining ?? included;
+  return {
+    id: purchase._id,
+    membershipId: membership?._id || null,
+    client: purchase.client ? {
+      id: purchase.client._id,
+      name: purchase.client.name,
+      email: purchase.client.email,
+      phone: purchase.client.phone,
+      picture: purchase.client.picture,
+      active: purchase.client.active,
+      createdAt: purchase.client.createdAt,
+    } : null,
+    referenceId: purchase.referenceId,
+    purchasedPlan: purchase.planSnapshot?.name || purchase.tier?.name || "Class Plan",
+    className: session?.title || "—",
+    session: session ? {
+      id: session._id,
+      title: session.title,
+      startAt: session.startAt,
+      endAt: session.endAt,
+      instructor: session.instructor ? {
+        id: session.instructor._id,
+        name: session.instructor.name,
+      } : null,
+    } : null,
+    amountPaid: purchase.totalAmount,
+    currency: purchase.currency,
+    paymentMethod: purchase.paymentMethod || "Xendit",
+    paymentStatus: purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending",
+    paymentDate: purchase.paidAt,
+    bookingDate: purchase.createdAt,
+    includedSessions: included,
+    usedSessions: included == null || remaining == null ? null : Math.max(0, included - remaining),
+    remainingSessions: remaining,
+    unlimitedClasses: !!membership?.unlimitedClasses,
+    startDate: purchase.paidAt || membership?.createdAt || purchase.createdAt,
+    expirationDate: membership?.currentPeriodEnd || null,
+    planStatus: oneTimePlanStatus(membership),
+    bookingStatus: booking?.status || "—",
+    attendanceStatus: ["attended", "no_show"].includes(booking?.status) ? booking.status : "Not recorded",
+  };
+}
+
+const purchasePopulate = [
+  { path: "client", select: "name email phone picture active createdAt" },
+  { path: "tier" },
+  { path: "membership" },
+  { path: "booking" },
+  { path: "session", populate: { path: "instructor", select: "name email" } },
+];
 
 // GET /api/memberships/mine — the signed-in client's current membership.
 router.get(
@@ -49,41 +107,10 @@ router.post(
   "/subscribe",
   requireRole("client", "admin"),
   asyncHandler(async (req, res) => {
-    const tier = await MembershipTier.findById(req.body?.tierId);
-    if (!tier || !tier.active) throw new HttpError(400, "Tier not found or inactive");
-
-    // Block a duplicate active/pending membership.
-    const existing = await Membership.findOne({ client: req.user._id, status: { $in: ["active", "pending", "past_due"] } });
-    if (existing && existing.status === "active") throw new HttpError(409, "You already have an active membership");
-
-    const referenceId = `mem_${req.user._id}_${Date.now()}`;
-    const customer = await xendit.createCustomer(req.user);
-    const publicUrl = appUrl(req);
-    const sub = await xendit.createSubscription({
-      referenceId,
-      customerId: customer.id,
-      tier,
-      successUrl: `${publicUrl}/dashboard/membership?status=success`,
-      cancelUrl: `${publicUrl}/dashboard/membership?status=cancelled`,
-    });
-
-    const membership = await Membership.create({
-      client: req.user._id,
-      tier: tier._id,
-      status: "pending",
-      referenceId,
-      xenditCustomerId: customer.id,
-      xenditPlanId: sub.planId,
-      checkoutUrl: sub.checkoutUrl,
-      simulated: !xendit.isLive(),
-    });
-    await membership.populate("tier");
-
-    res.status(201).json({
-      membership: membership.toPublic(),
-      checkoutUrl: sub.checkoutUrl,   // live: redirect the client here
-      simulated: !xendit.isLive(),    // dev: client completes via /simulate
-    });
+    throw new HttpError(
+      410,
+      "Recurring subscriptions are no longer available. Select a published class and purchase a class plan with a one-time payment."
+    );
   })
 );
 
@@ -103,15 +130,47 @@ router.post(
   })
 );
 
-// Admin: list all memberships.
+// Admin: list successful one-time class-plan purchases.
 router.get(
   "/",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
-    const list = await Membership.find(filter).sort("-createdAt").populate("tier").populate("client", "name email picture");
-    res.json({ memberships: list.map((m) => m.toPublic()) });
+    const purchases = await GuestPurchase.find({
+      paidAt: { $ne: null },
+      client: { $ne: null },
+      membership: { $ne: null },
+    }).sort("-paidAt -createdAt").populate(purchasePopulate);
+    res.json({ purchases: purchases.map(oneTimePurchaseRecord) });
+  })
+);
+
+// Admin: complete one-time plan and class history for one client.
+router.get(
+  "/clients/:clientId/record",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const client = await User.findOne({ _id: req.params.clientId, role: "client" })
+      .select("name email phone picture active createdAt");
+    if (!client) throw new HttpError(404, "Client record not found");
+    const purchases = await GuestPurchase.find({
+      client: client._id,
+      paidAt: { $ne: null },
+      membership: { $ne: null },
+    }).sort("-paidAt -createdAt").populate(purchasePopulate);
+    const records = purchases.map(oneTimePurchaseRecord);
+    res.json({
+      client: {
+        id: client._id,
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        picture: client.picture,
+        active: client.active,
+        createdAt: client.createdAt,
+      },
+      activePlans: records.filter((record) => record.planStatus === "Active"),
+      history: records,
+    });
   })
 );
 

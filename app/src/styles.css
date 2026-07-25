@@ -616,3 +616,29 @@ a { color:var(--sage-deep); }
 .purchase-history-card dl div:last-child { border:0; }
 .purchase-history-card dt { color:var(--ink-soft); }
 .purchase-history-card dd { margin:0; text-align:right; font-weight:600; }
+
+/* One-time class plan records */
+.purchase-table-wrap { overflow:auto; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
+.purchase-table { width:100%; min-width:1180px; border-collapse:collapse; font-size:.73rem; }
+.purchase-table th { padding:.8rem .7rem; text-align:left; color:var(--ink-soft); background:#f6f2ed; white-space:nowrap; }
+.purchase-table td { padding:.85rem .7rem; border-top:1px solid var(--line); vertical-align:top; }
+.purchase-table td small { display:block; margin-top:.2rem; color:var(--ink-soft); font-size:.65rem; white-space:nowrap; }
+.client-record-link { color:var(--olive); font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+.back-link { display:inline-block; margin-bottom:.6rem; color:var(--olive); font-size:.75rem; }
+.record-section { margin-top:1.5rem; }
+.record-section>h2,.record-card>h2 { margin:0 0 1rem; font-size:1.15rem; }
+.record-card { padding:1.25rem; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
+.record-plan-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:1rem; }
+.record-card-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:.75rem; }
+.record-card-head h3,.record-card-head p { margin:0; }
+.record-card-head p { margin-top:.2rem; color:var(--ink-soft); font-size:.72rem; }
+.record-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:.85rem 1.25rem; margin:0; }
+.record-grid.compact { margin-bottom:1rem; }
+.record-grid div { min-width:0; }
+.record-grid dt { color:var(--ink-soft); font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; }
+.record-grid dd { margin:.2rem 0 0; font-size:.78rem; font-weight:600; overflow-wrap:anywhere; }
+
+@media (max-width:600px) {
+  .record-plan-grid { grid-template-columns:1fr; }
+  .record-grid { grid-template-columns:1fr 1fr; }
+}

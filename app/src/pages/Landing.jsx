@@ -82,7 +82,7 @@ export default function Landing() {
       <section className="landing-cta">
         <p className="landing-kicker">Ready when you are</p>
         <h2>Find a class that fits your next chapter.</h2>
-        <p>Sign in to view the live schedule, manage your membership, and request your spot.</p>
+        <p>Sign in to view the live schedule, manage your class plans, and request your spot.</p>
         <Link className="landing-primary" to="/schedule">View Schedule</Link>
       </section>
     </main>

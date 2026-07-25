@@ -1,115 +1,65 @@
 import { useEffect, useState } from "react";
-import { api } from "../api.js";
-import { fmtMoney, fmtInterval } from "../util.js";
+import { Link } from "react-router-dom";
 import { toast } from "react-toastify";
+import { api } from "../api.js";
+import { fmtMoney, fmtRange } from "../util.js";
 
-const STATUS_TEXT = {
-  active: "Active", pending: "Awaiting payment", past_due: "Payment failed", cancelled: "Cancelled", inactive: "Inactive",
-};
+const date = (value) => value
+  ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" })
+  : "—";
+const validity = (plan) => plan
+  ? `${plan.intervalCount || 1} ${String(plan.interval || "MONTH").toLowerCase()}${(plan.intervalCount || 1) === 1 ? "" : "s"}`
+  : "—";
 
 export default function ClientMembership() {
   const [membership, setMembership] = useState(null);
-  const [tiers, setTiers] = useState([]);
-  const [live, setLive] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [purchases, setPurchases] = useState([]);
 
-  async function load() {
-    const [{ membership, live }, { tiers }] = await Promise.all([
-      api("/memberships/mine"), api("/tiers"),
-    ]);
-    setMembership(membership);
-    if (membership?.status === "past_due") {
-      toast.error("Your last payment failed — please update your payment method.", { toastId: "membership-past-due" });
-    }
-    setLive(live);
-    setTiers(tiers);
-  }
   useEffect(() => {
-    load().catch((e) => toast.error(e.message));
-    const p = new URLSearchParams(window.location.search).get("status");
-    if (p === "success") toast.success("Thanks! We're confirming your payment — your membership activates shortly.", { toastId: "membership-return-success" });
-    if (p === "cancelled") toast.warning("Checkout cancelled. You can subscribe again anytime.", { toastId: "membership-return-cancelled" });
+    Promise.all([api("/memberships/mine"), api("/guest-checkout/history/mine")])
+      .then(([plan, history]) => {
+        setMembership(plan.membership?.source === "guest_checkout" ? plan.membership : null);
+        setPurchases(history.purchases || []);
+      })
+      .catch((error) => toast.error(error.message));
   }, []);
 
-  const activeish = membership && ["active", "pending", "past_due"].includes(membership.status);
+  const active = membership?.activeNow &&
+    (membership.unlimitedClasses || membership.sessionsRemaining == null || membership.sessionsRemaining > 0);
 
-  async function subscribe(tierId) {
-    setBusy(true);
-    try {
-      const res = await api("/memberships/subscribe", { method: "POST", body: { tierId } });
-      await load();
-      toast.success(
-        res.checkoutUrl
-          ? "Subscription started. Open the secure checkout below; it will stay separate from this page."
-          : "Subscription started. Complete payment below to activate."
-      );
-    } catch (e) { toast.error(e.message); }
-    finally { setBusy(false); }
-  }
+  return <div className="page">
+    <div className="page-head"><div><h1>My Class Plans</h1>
+      <p>One-time class plan purchases, remaining sessions, and payment history.</p></div>
+      <Link className="btn" to="/schedule">Browse Classes</Link></div>
 
-  async function simulatePay() {
-    setBusy(true);
-    try { await api(`/memberships/${membership.id}/simulate`, { method: "POST", body: { event: "activated" } }); await load();
-      toast.success("Payment simulated — membership active. You can now book classes."); }
-    catch (e) { toast.error(e.message); }
-    finally { setBusy(false); }
-  }
+    <h2 style={{ margin: "0 0 .8rem", fontWeight: 300 }}>Current Plan</h2>
+    {!active ? <div className="empty">No active class plan. Choose a published class to purchase a plan with a one-time payment.</div> :
+      <article className="card" style={{ marginBottom: "1.5rem", borderLeft: "4px solid var(--sage)" }}>
+        <div className="purchase-history-head"><div><h3>{membership.tier?.name}</h3>
+          <span>{membership.referenceId}</span></div><span className="status-tag accepted">Active</span></div>
+        <p className="tier-amount">{fmtMoney(membership.tier?.amount, membership.tier?.currency)}
+          <span className="tier-per"> One-Time Payment</span></p>
+        <div className="sub">{membership.unlimitedClasses ? "Unlimited sessions"
+          : `${membership.sessionsRemaining ?? 0} of ${membership.sessionsIncluded ?? "—"} sessions remaining`}</div>
+        <div className="sub">Expires {date(membership.currentPeriodEnd)}</div>
+      </article>}
 
-  async function cancel() {
-    if (!window.confirm("Cancel your membership? You'll lose booking access.")) return;
-    setBusy(true);
-    try { await api(`/memberships/${membership.id}/cancel`, { method: "POST" }); await load(); toast.success("Membership cancelled."); }
-    catch (e) { toast.error(e.message); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="page">
-      <div className="page-head"><div><h1>Membership</h1><p>An active membership unlocks class booking.</p></div></div>
-
-      {activeish && (
-        <div className="card" style={{ marginBottom: "1.4rem", borderLeft: "4px solid var(--sage)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.5rem" }}>
-            <h3>{membership.tier?.name}</h3>
-            <span className={"status-tag " + (membership.status === "active" ? "accepted" : membership.status === "past_due" ? "cancelled" : "pending")}>
-              {STATUS_TEXT[membership.status]}
-            </span>
-          </div>
-          <div className="sub">{fmtMoney(membership.tier?.amount, membership.tier?.currency)}{fmtInterval(membership.tier?.interval, membership.tier?.intervalCount)}</div>
-          {membership.status === "active" && membership.currentPeriodEnd && (
-            <div className="sub">Renews {new Date(membership.currentPeriodEnd).toLocaleDateString()}</div>
-          )}
-
-          <div style={{ marginTop: "0.9rem", display: "flex", gap: "0.6rem" }}>
-            {membership.status === "pending" && membership.simulated &&
-              <button className="btn" onClick={simulatePay} disabled={busy}>Complete payment (simulated)</button>}
-            {membership.status === "pending" && !membership.simulated && membership.checkoutUrl &&
-              <a className="btn" href={membership.checkoutUrl} target="_blank" rel="noopener noreferrer">Open secure checkout</a>}
-            <button className="btn danger" onClick={cancel} disabled={busy}>Cancel membership</button>
-          </div>
-        </div>
-      )}
-
-      {!activeish && (
-        <>
-          {tiers.length === 0
-            ? <div className="empty">No membership plans available yet. Please check back soon.</div>
-            : <div className="grid-cards">
-                {tiers.map((t) => (
-                  <div className="card" key={t.id}>
-                    <h3>{t.name}</h3>
-                    <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per">{fmtInterval(t.interval, t.intervalCount)}</span></p>
-                    {t.description && <div className="sub" style={{ marginBottom: "0.5rem" }}>{t.description}</div>}
-                    {t.benefits?.length > 0 && (
-                      <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>
-                    )}
-                    <button className="btn" style={{ marginTop: "0.8rem", width: "100%" }} onClick={() => subscribe(t.id)} disabled={busy}>Subscribe</button>
-                  </div>
-                ))}
-              </div>}
-          {!live && <p className="meta-line" style={{ marginTop: "1rem" }}>Billing is in simulation mode — no real charge is made. Connect a Xendit key to go live.</p>}
-        </>
-      )}
-    </div>
-  );
+    <h2 style={{ margin: "0 0 .8rem", fontWeight: 300 }}>Purchase History</h2>
+    {!purchases.length ? <div className="empty">No successful class plan purchases yet.</div> :
+      <div className="grid-cards">{purchases.map((purchase) => <article className="card purchase-history-card" key={purchase.id}>
+        <div className="purchase-history-head"><div><h3>{purchase.plan?.name || "Class Plan"}</h3>
+          <span>{purchase.referenceId}</span></div>
+          <span className={"status-tag " + (purchase.status === "refunded" ? "declined" : "accepted")}>
+            {purchase.status === "refunded" ? "Refunded" : "Paid"}</span></div>
+        <dl>
+          <div><dt>Class</dt><dd>{purchase.session?.title || "—"}</dd></div>
+          <div><dt>Schedule</dt><dd>{purchase.session ? fmtRange(purchase.session.startAt, purchase.session.endAt) : "—"}</dd></div>
+          <div><dt>Amount</dt><dd>{fmtMoney(purchase.totalAmount, purchase.currency)} One-Time Payment</dd></div>
+          <div><dt>Sessions</dt><dd>{purchase.plan?.unlimitedClasses ? "Unlimited" : (purchase.plan?.sessionCount || 1)}</dd></div>
+          <div><dt>Validity</dt><dd>{validity(purchase.plan)}</dd></div>
+          <div><dt>Payment Method</dt><dd>{purchase.paymentMethod || "Xendit"}</dd></div>
+          <div><dt>Payment Date</dt><dd>{date(purchase.paidAt)}</dd></div>
+        </dl>
+      </article>)}</div>}
+  </div>;
 }
