@@ -57,6 +57,9 @@ export default function PaymentResult() {
 
       {outcome === "success" && <>
         <h1>Thank you!</h1>
+        <p className="payment-result-lead">
+          Thank you for choosing <strong>Anina Wellness Sanctuary</strong>. Your booking has been successfully confirmed.
+        </p>
         <div className="payment-reference">Booking reference <strong>{order.referenceId}</strong></div>
       </>}
 
