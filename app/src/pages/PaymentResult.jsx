@@ -51,9 +51,10 @@ export default function PaymentResult() {
       <span>Payment result</span></header>
     <main className={`payment-result ${outcome}`}>
       {outcome === "pending" && <>
+        <div className="payment-result-icon pending"><span /></div>
         <p className="payment-result-kicker">Payment processing</p>
         <h1>We’re confirming your payment.</h1>
-        <p className="payment-result-lead">Please keep this page open while we verify the payment result.</p>
+        <p className="payment-result-lead">Please keep this page open. Your booking will appear as soon as Xendit sends the verified payment result.</p>
         <div className="payment-reference">Booking reference <strong>{order.referenceId}</strong></div>
       </>}
 
