@@ -1,25 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
-import { useAuth } from "../auth.jsx";
-import { fmtTime } from "../util.js";
-
-const money = (amount, currency = "PHP") =>
-  new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(Number(amount || 0));
-const validity = (plan) => {
-  const count = plan?.intervalCount || 1;
-  const unit = String(plan?.interval || "MONTH").toLowerCase();
-  return `${count} ${unit}${count === 1 ? "" : "s"}`;
-};
-const sessions = (plan) => plan?.unlimitedClasses
-  ? "Unlimited classes"
-  : `${plan?.sessionCount || 1} session${(plan?.sessionCount || 1) === 1 ? "" : "s"}`;
 
 export default function PaymentResult() {
   const { orderId } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const token = params.get("token") || sessionStorage.getItem(`guest_order_${orderId}`) || "";
   const returnState = params.get("return") || "";
   const [order, setOrder] = useState(null);
@@ -57,18 +43,6 @@ export default function PaymentResult() {
 
   if (error) return <div className="guest-state error"><p>{error}</p><Link to="/">Return to Home</Link></div>;
   if (!order) return <div className="guest-state">Loading payment result…</div>;
-  const plan = order.plan;
-  const detailRows = [
-    ["Booking Reference", order.referenceId],
-    ["Customer Name", order.fullName],
-    ["Class Name", order.session?.title],
-    ["Schedule", `${new Date(order.session?.startAt).toLocaleDateString("en-PH", { dateStyle: "long" })}, ${fmtTime(order.session?.startAt)} – ${fmtTime(order.session?.endAt)}`],
-    ["Purchased Plan", plan?.name],
-    ["Amount Paid", money(order.totalAmount, order.currency)],
-    ["Sessions / Classes", sessions(plan)],
-    ["Plan Validity", validity(plan)],
-    ...(order.paidAt ? [["Payment Date", new Date(order.paidAt).toLocaleString("en-PH", { dateStyle: "long", timeStyle: "short" })]] : []),
-  ];
   const retry = () => navigate(`/guest/checkout/${orderId}?token=${encodeURIComponent(token)}`);
   const clientError = sessionStorage.getItem(`guest_payment_error_${orderId}`);
 
@@ -77,25 +51,13 @@ export default function PaymentResult() {
       <span>Payment result</span></header>
     <main className={`payment-result ${outcome}`}>
       {outcome === "pending" && <>
-        <div className="payment-result-icon pending"><span /></div>
-        <p className="payment-result-kicker">Payment processing</p>
-        <h1>We’re confirming your payment.</h1>
-        <p className="payment-result-lead">Please keep this page open. Your booking will appear as soon as Xendit sends the verified payment result.</p>
+        <h1>Thank you!</h1>
         <div className="payment-reference">Booking reference <strong>{order.referenceId}</strong></div>
       </>}
 
       {outcome === "success" && <>
-        <div className="payment-result-icon success">✓</div>
-        <p className="payment-result-kicker">Booking confirmed</p>
-        <h1>Thank you! Your booking has been confirmed.</h1>
-        <p className="payment-result-lead">Thank you for choosing Anina Wellness Sanctuary. A confirmation email containing your booking and payment details has been sent to your registered email address. We look forward to seeing you in class!</p>
-        <PaymentDetails rows={detailRows} />
-        <div className="payment-result-actions">
-          {user?.role === "client" || order.hasLinkedAccount
-            ? <Link className="guest-primary link" to={user ? "/dashboard" : "/login"}>View My Booking</Link>
-            : <Link className="guest-primary link" to="/">Return to Home</Link>}
-          {order.receiptUrl && <a className="payment-secondary" href={order.receiptUrl}>View Receipt</a>}
-        </div>
+        <h1>Thank you!</h1>
+        <div className="payment-reference">Booking reference <strong>{order.referenceId}</strong></div>
       </>}
 
       {outcome === "declined" && <>
@@ -129,11 +91,6 @@ export default function PaymentResult() {
       </>}
     </main>
   </div>;
-}
-
-function PaymentDetails({ rows }) {
-  return <dl className="payment-result-details">{rows.map(([label, value]) =>
-    <div key={label}><dt>{label}</dt><dd>{value || "—"}</dd></div>)}</dl>;
 }
 
 function ContactHelp() {
