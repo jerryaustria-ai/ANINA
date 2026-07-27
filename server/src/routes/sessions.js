@@ -719,7 +719,10 @@ router.get(
     const bookings = await Booking.find({ session: session._id })
       .populate("client", "name email picture phone")
       .sort("createdAt");
-    res.json({ bookings: bookings.map((bk) => bk.toPublic()) });
+    res.json({
+      bookings: bookings.map((bk) => bk.toPublic()),
+      serverNow: new Date().toISOString(),
+    });
   })
 );
 

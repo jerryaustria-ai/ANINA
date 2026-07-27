@@ -174,6 +174,8 @@ function ScheduleView() {
   const [reschedule, setReschedule] = useState(null);
   const [scheduleReview, setScheduleReview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [serverOffset, setServerOffset] = useState(0);
+  const [, setClockTick] = useState(0);
 
   async function load() {
     const from = cal.range.from.toISOString();
@@ -184,9 +186,14 @@ function ScheduleView() {
     ]);
     setSessions(sessionData.sessions);
     setBookings(bookingData.bookings);
+    if (bookingData.serverNow) setServerOffset(new Date(bookingData.serverNow).getTime() - Date.now());
     if (sel) setSel(sessionData.sessions.find((session) => session.id === sel.id) || null);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick((value) => value + 1), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     Promise.all([api("/rooms"), api("/users")])
       .then(([roomData, userData]) => { setRooms(roomData.rooms); setUsers(userData.users); })
@@ -215,7 +222,9 @@ function ScheduleView() {
     ["pending", "accepted", "waitlisted"].includes(booking.status));
   const historicalBookings = allSelectedBookings.filter((booking) =>
     !["pending", "accepted", "waitlisted"].includes(booking.status));
-  const selectedClassEnded = !!sel && new Date(sel.endAt) <= new Date();
+  const serverNow = Date.now() + serverOffset;
+  const selectedClassStarted = !!sel && serverNow >= new Date(sel.startAt).getTime();
+  const selectedClassEnded = !!sel && serverNow >= new Date(sel.endAt).getTime();
   const displayedBookings = selectedClassEnded ? allSelectedBookings : selectedBookings;
   const serviceNames = [...new Set(sessions.map((session) => session.title).filter(Boolean))];
 
@@ -471,7 +480,7 @@ function ScheduleView() {
                       <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
                     {!selectedClassEnded && ["pending", "accepted", "waitlisted"].includes(booking.status) &&
                       <button className="btn danger sm" onClick={() => cancelBooking(booking)} disabled={busy}>Cancel</button>}
-                    {selectedClassEnded && ["accepted", "attended", "no_show"].includes(booking.status) && <>
+                    {selectedClassStarted && ["accepted", "attended", "no_show"].includes(booking.status) && <>
                       <button className="btn sm" onClick={() => recordAttendance(booking, "present")} disabled={busy}>Present</button>
                       <button className="btn ghost sm" onClick={() => recordAttendance(booking, "absent")} disabled={busy}>Absent</button>
                       <button className="btn danger sm" onClick={() => recordAttendance(booking, "no_show")} disabled={busy}>No Show</button>

@@ -14,6 +14,8 @@ export default function InstructorDashboard() {
   const [sessions, setSessions] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [serverOffset, setServerOffset] = useState(0);
+  const [, setClockTick] = useState(0);
 
   const [form, setForm] = useState(null); // create/edit modal
   const [manage, setManage] = useState(null); // {session, bookings}
@@ -26,6 +28,10 @@ export default function InstructorDashboard() {
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)).catch(() => {}); }, []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockTick((value) => value + 1), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("schedule");
     if (id && sessions.some((session) => session.id === id)) {
@@ -90,10 +96,11 @@ export default function InstructorDashboard() {
   }
 
   async function openManage(sessionId) {
-    const [{ session }, { bookings }] = await Promise.all([
+    const [{ session }, bookingData] = await Promise.all([
       api(`/sessions/${sessionId}`), api(`/sessions/${sessionId}/bookings`),
     ]);
-    setManage({ session, bookings });
+    if (bookingData.serverNow) setServerOffset(new Date(bookingData.serverNow).getTime() - Date.now());
+    setManage({ session, bookings: bookingData.bookings });
   }
   async function refreshManage() {
     if (!manage) return;
@@ -125,7 +132,9 @@ export default function InstructorDashboard() {
 
   const s = manage?.session;
   const metMin = s && s.acceptedCount >= s.minToRun;
-  const classEnded = s && new Date(s.endAt) <= new Date();
+  const serverNow = Date.now() + serverOffset;
+  const classStarted = s && serverNow >= new Date(s.startAt).getTime();
+  const classEnded = s && serverNow >= new Date(s.endAt).getTime();
 
   return (
     <div className="page">
@@ -219,10 +228,10 @@ export default function InstructorDashboard() {
                       <button className="btn danger sm" onClick={() => decide(b.id, "decline")} disabled={busy}>Decline</button>
                     </>}
                     {!classEnded && b.status === "accepted" && <button className="btn ghost sm" onClick={() => decide(b.id, "waitlist")} disabled={busy}>Waitlist</button>}
-                    {["accepted", "attended", "no_show"].includes(b.status) && <>
+                    {classStarted && ["accepted", "attended", "no_show"].includes(b.status) && <>
                       <button className="btn sm" onClick={() => recordAttendance(b.id, "present")} disabled={busy}>Present</button>
                       <button className="btn ghost sm" onClick={() => recordAttendance(b.id, "absent")} disabled={busy}>Absent</button>
-                      {classEnded && <button className="btn danger sm" onClick={() => recordAttendance(b.id, "no_show")} disabled={busy}>No Show</button>}
+                      <button className="btn danger sm" onClick={() => recordAttendance(b.id, "no_show")} disabled={busy}>No Show</button>
                     </>}
                   </li>
                 ))}

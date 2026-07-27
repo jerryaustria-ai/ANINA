@@ -148,7 +148,10 @@ router.get(
       .populate("client", "name email picture phone active")
       .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] })
       .sort("-createdAt");
-    res.json({ bookings: bookings.filter((b) => b.session).map((b) => b.toPublic()) });
+    res.json({
+      bookings: bookings.filter((b) => b.session).map((b) => b.toPublic()),
+      serverNow: new Date().toISOString(),
+    });
   })
 );
 
@@ -340,7 +343,11 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
-    const classEnded = new Date(booking.session.endAt) <= new Date();
+    const serverNow = new Date();
+    if (serverNow < new Date(booking.session.startAt)) {
+      throw new HttpError(409, "Attendance can only be recorded once the scheduled class has started.");
+    }
+    const classEnded = new Date(booking.session.endAt) <= serverNow;
     if (booking.session.status === "cancelled") {
       throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
     }
