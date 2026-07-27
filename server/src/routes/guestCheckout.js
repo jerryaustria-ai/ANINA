@@ -8,7 +8,7 @@ import * as xendit from "../services/xendit.js";
 import { asyncHandler } from "../utils/http.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
-import { findActiveDuplicate } from "../services/duplicatePurchase.js";
+import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
 
 const router = Router();
 const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -76,6 +76,15 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   ]);
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   if (!tier || !matchesClass(tier, session)) return res.status(400).json({ error: "The selected plan is not available for this class." });
+
+  const scheduleConflict = await findActiveScheduleConflict({ email, session });
+  if (scheduleConflict) {
+    return res.status(409).json({
+      error: "You already have an active booking for this date and time. Please choose a different schedule.",
+      code: "ACTIVE_SCHEDULE_CONFLICT",
+      details: scheduleConflict,
+    });
+  }
 
   const duplicate = await findActiveDuplicate({ email, session, tier });
   const adminOverrideEnabled = process.env.ALLOW_ADMIN_DUPLICATE_PURCHASE === "true";
@@ -145,6 +154,18 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
   if (["confirmed", "waitlisted"].includes(purchase.status)) return res.json({ order: purchase.toPublic() });
   if (!safeSession(purchase.session)) return res.status(409).json({ error: "This class is no longer available for booking." });
+  const scheduleConflict = await findActiveScheduleConflict({
+    email: purchase.email,
+    session: purchase.session,
+    excludePurchaseId: purchase._id,
+  });
+  if (scheduleConflict) {
+    return res.status(409).json({
+      error: "You already have an active booking for this date and time. Please choose a different schedule.",
+      code: "ACTIVE_SCHEDULE_CONFLICT",
+      details: scheduleConflict,
+    });
+  }
   if (!purchase.duplicateOverrideBy) {
     const duplicate = await findActiveDuplicate({
       email: purchase.email,

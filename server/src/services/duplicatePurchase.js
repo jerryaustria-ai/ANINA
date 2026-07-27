@@ -1,7 +1,58 @@
 import { Booking } from "../models/Booking.js";
+import { ClassSession } from "../models/ClassSession.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { Membership } from "../models/Membership.js";
 import { User } from "../models/User.js";
+
+const ACTIVE_BOOKING_STATUSES = ["pending", "accepted", "waitlisted"];
+const ACTIVE_PURCHASE_STATUSES = [
+  "payment_pending",
+  "paid",
+  "pending_confirmation",
+  "confirmed",
+  "waitlisted",
+];
+
+export async function findActiveScheduleConflict({ email, session, excludePurchaseId = null }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const user = await User.findOne({ email: normalizedEmail }).select("_id");
+
+  // Match the selected schedule itself and any other schedule occupying the
+  // exact same date/time window.
+  const conflictingSessionIds = await ClassSession.find({
+    startAt: { $lt: session.endAt },
+    endAt: { $gt: session.startAt },
+    status: { $in: ["open", "confirmed", "rescheduled", "published"] },
+  }).distinct("_id");
+
+  const [booking, purchase] = await Promise.all([
+    user ? Booking.findOne({
+      client: user._id,
+      session: { $in: conflictingSessionIds },
+      status: { $in: ACTIVE_BOOKING_STATUSES },
+    }).populate("session purchase").sort("-createdAt") : null,
+    GuestPurchase.findOne({
+      _id: excludePurchaseId ? { $ne: excludePurchaseId } : { $exists: true },
+      email: normalizedEmail,
+      session: { $in: conflictingSessionIds },
+      status: { $in: ACTIVE_PURCHASE_STATUSES },
+    }).populate("session").sort("-createdAt"),
+  ]);
+
+  const conflict = booking || purchase;
+  if (!conflict) return null;
+
+  const conflictingSession = conflict.session;
+  const linkedPurchase = booking?.purchase;
+  return {
+    conflict: true,
+    existingBookingId: booking?._id || null,
+    bookingReference: linkedPurchase?.referenceId || purchase?.referenceId || null,
+    className: conflictingSession?.title || session.title,
+    startAt: conflictingSession?.startAt || session.startAt,
+    endAt: conflictingSession?.endAt || session.endAt,
+  };
+}
 
 export async function findActiveDuplicate({ email, session, tier }) {
   const user = await User.findOne({ email: String(email || "").trim().toLowerCase() });
@@ -21,7 +72,7 @@ export async function findActiveDuplicate({ email, session, tier }) {
     Booking.findOne({
       client: user._id,
       session: session._id,
-      status: { $in: ["pending", "accepted", "waitlisted"] },
+      status: { $in: ACTIVE_BOOKING_STATUSES },
     }).populate("purchase").sort("-createdAt"),
   ]);
 
