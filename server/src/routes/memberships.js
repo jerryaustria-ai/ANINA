@@ -41,6 +41,19 @@ function recurringPlanStatus(membership) {
   return "Inactive";
 }
 
+function purchaseValidityEnd(purchase) {
+  if (purchase.membership?.currentPeriodEnd) return purchase.membership.currentPeriodEnd;
+  const start = new Date(purchase.paidAt || purchase.createdAt);
+  const count = Math.max(1, Number(purchase.planSnapshot?.intervalCount || 1));
+  const end = new Date(start);
+  const interval = String(purchase.planSnapshot?.interval || "MONTH").toUpperCase();
+  if (interval === "DAY") end.setDate(end.getDate() + count);
+  else if (interval === "WEEK") end.setDate(end.getDate() + (count * 7));
+  else if (interval === "YEAR") end.setFullYear(end.getFullYear() + count);
+  else end.setMonth(end.getMonth() + count);
+  return end;
+}
+
 function oneTimePurchaseRecord(purchase) {
   const membership = purchase.membership;
   const booking = purchase.booking;
@@ -48,6 +61,20 @@ function oneTimePurchaseRecord(purchase) {
   const included = membership?.sessionsIncluded ??
     (purchase.planSnapshot?.unlimitedClasses ? null : (purchase.planSnapshot?.sessionCount || 1));
   const remaining = membership?.sessionsRemaining ?? included;
+  const expirationDate = purchaseValidityEnd(purchase);
+  const startDate = purchase.paidAt || membership?.createdAt || purchase.createdAt;
+  const paymentStatus = purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending";
+  let planStatus = oneTimePlanStatus(membership);
+  if (!membership && paymentStatus === "Paid") {
+    planStatus = new Date(expirationDate) <= new Date() ? "Expired"
+      : included != null && Number(remaining) <= 0 ? "Fully Used" : "Active";
+  }
+  if (["cancelled", "declined", "failed"].includes(purchase.status) ||
+      ["cancelled", "declined"].includes(booking?.status)) planStatus = "Inactive";
+  if (purchase.refundedAt) planStatus = "Inactive";
+  if (session?.status === "completed" || ["attended", "no_show"].includes(booking?.status)) {
+    planStatus = "Fully Used";
+  }
   return {
     id: purchase._id,
     membershipType: "one_time",
@@ -70,6 +97,7 @@ function oneTimePurchaseRecord(purchase) {
       title: session.title,
       startAt: session.startAt,
       endAt: session.endAt,
+      status: session.status,
       instructor: session.instructor ? {
         id: session.instructor._id,
         name: session.instructor.name,
@@ -78,17 +106,17 @@ function oneTimePurchaseRecord(purchase) {
     amountPaid: purchase.totalAmount,
     currency: purchase.currency,
     paymentMethod: purchase.paymentMethod || "Xendit",
-    paymentStatus: purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending",
+    paymentStatus,
     paymentDate: purchase.paidAt,
     bookingDate: purchase.createdAt,
     includedSessions: included,
     usedSessions: included == null || remaining == null ? null : Math.max(0, included - remaining),
     remainingSessions: remaining,
     unlimitedClasses: !!membership?.unlimitedClasses,
-    startDate: purchase.paidAt || membership?.createdAt || purchase.createdAt,
-    expirationDate: membership?.currentPeriodEnd || null,
+    startDate,
+    expirationDate,
     validityPeriod: `${purchase.planSnapshot?.intervalCount || 1} ${String(purchase.planSnapshot?.interval || "MONTH").toLowerCase()}${(purchase.planSnapshot?.intervalCount || 1) === 1 ? "" : "s"}`,
-    planStatus: oneTimePlanStatus(membership),
+    planStatus,
     bookingStatus: booking?.status || "—",
     attendanceStatus: ["attended", "no_show"].includes(booking?.status) ? booking.status : "Not recorded",
   };
@@ -267,7 +295,6 @@ router.get(
       GuestPurchase.find({
         client: client._id,
         paidAt: { $ne: null },
-        membership: { $ne: null },
       }).sort("-paidAt -createdAt").populate(purchasePopulate),
       Membership.find({ client: client._id, source: "membership" }).populate("tier")
         .populate("client", "name email phone picture active createdAt").sort("-createdAt"),
@@ -324,7 +351,20 @@ router.get(
         active: client.active,
         createdAt: client.createdAt,
       },
-      activeMemberships: membershipRecords.filter((record) => record.planStatus === "Active"),
+      activeMemberships: membershipRecords.filter((record) => {
+        const now = new Date();
+        const startsOnTime = !record.startDate || new Date(record.startDate) <= now;
+        const hasNotExpired = !record.expirationDate || new Date(record.expirationDate) > now;
+        const hasUsage = record.membershipType === "recurring" ||
+          record.unlimitedClasses ||
+          record.remainingSessions == null ||
+          Number(record.remainingSessions) > 0;
+        return record.planStatus === "Active" &&
+          record.paymentStatus === "Paid" &&
+          startsOnTime &&
+          hasNotExpired &&
+          hasUsage;
+      }),
       history,
     });
   })

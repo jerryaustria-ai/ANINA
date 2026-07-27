@@ -66,12 +66,18 @@ export default function ClientRecordDetails() {
             <span className="status-tag accepted">{plan.planStatus}</span></div>
           <dl className="record-grid compact">
             <div><dt>Membership Type</dt><dd>{plan.membershipTypeLabel}</dd></div>
+            <div><dt>Class</dt><dd>{plan.className}</dd></div>
+            <div><dt>Instructor</dt><dd>{plan.session?.instructor?.name || "—"}</dd></div>
+            <div><dt>Schedule</dt><dd>{plan.session ? `${date(plan.session.startAt, true)} – ${new Date(plan.session.endAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}` : "—"}</dd></div>
             <div><dt>Booking Reference</dt><dd>{plan.referenceId}</dd></div>
+            <div><dt>Payment Status</dt><dd>{plan.paymentStatus}</dd></div>
+            <div><dt>Booking Date</dt><dd>{date(plan.bookingDate, true)}</dd></div>
             <div><dt>Payment Amount</dt><dd>{fmtMoney(plan.amountPaid, plan.currency)}
               {plan.membershipType === "recurring" ? ` / ${plan.billingCycle}` : " One-Time Payment"}</dd></div>
             <div><dt>Payment Method</dt><dd>{plan.paymentMethod}</dd></div>
             <div><dt>Payment Date</dt><dd>{date(plan.paymentDate, true)}</dd></div>
             {plan.membershipType === "one_time" ? <>
+              <div><dt>Remaining Usage</dt><dd>{plan.unlimitedClasses ? "Unlimited" : plan.remainingSessions ?? "—"}</dd></div>
               <div><dt>Start Date</dt><dd>{date(plan.startDate)}</dd></div>
               <div><dt>Expiration Date</dt><dd>{date(plan.expirationDate)}</dd></div>
             </> : <>
@@ -80,9 +86,10 @@ export default function ClientRecordDetails() {
               <div><dt>Renewal Status</dt><dd>{plan.renewalStatus}</dd></div>
               <div><dt>Subscription Start Date</dt><dd>{date(plan.startDate)}</dd></div>
             </>}
+            <div><dt>Current Status</dt><dd>{plan.planStatus}</dd></div>
           </dl>
-          <button className="btn danger sm" disabled={busy === plan.membershipId}
-            onClick={() => cancelPlan(plan)}>Cancel Plan</button>
+          {plan.membershipId && <button className="btn danger sm" disabled={busy === plan.membershipId}
+            onClick={() => cancelPlan(plan)}>Cancel Plan</button>}
         </article>)}</div>}
     </section>
 
