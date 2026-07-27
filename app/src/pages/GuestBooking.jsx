@@ -46,7 +46,7 @@ export default function GuestBooking() {
       sessionStorage.setItem(`guest_order_${result.order.id}`, result.token);
       navigate(`/guest/checkout/${result.order.id}?token=${result.token}`);
     } catch (error) {
-      if (["DUPLICATE_ACTIVE_PURCHASE", "ACTIVE_SCHEDULE_CONFLICT"].includes(error.code)) {
+      if (["DUPLICATE_ACTIVE_PURCHASE", "ACTIVE_SCHEDULE_CONFLICT", "FIRST_TIMER_ONLY"].includes(error.code)) {
         setDuplicate({ ...error.details, code: error.code, message: error.message });
       }
       else toast.error(error.message);
@@ -125,18 +125,21 @@ export default function GuestBooking() {
       onClose={() => setDuplicate(null)}
       title={duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT"
         ? "Schedule Conflict Detected"
-        : "Duplicate Booking Detected"}
+        : duplicate?.code === "FIRST_TIMER_ONLY"
+          ? "First-Time Client Plan"
+          : "Duplicate Booking Detected"}
       footer={<>
         {duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT"
           ? <button className="btn" type="button" onClick={() => navigate("/schedule")}>Choose a Different Schedule</button>
           : <button className="btn" type="button" onClick={chooseDifferentPlan}>Choose a Different Plan</button>}
-        <button className="btn" type="button" onClick={() => navigate(getToken() ? "/dashboard" : "/login?next=/dashboard")}>View My Existing Booking</button>
+        {duplicate?.code !== "FIRST_TIMER_ONLY" &&
+          <button className="btn" type="button" onClick={() => navigate(getToken() ? "/dashboard" : "/login?next=/dashboard")}>View My Existing Booking</button>}
         {duplicate?.allowAdminOverride && <button className="btn primary" type="button"
           onClick={() => { setDuplicate(null); createOrder(true); }}>Continue Anyway</button>}
       </>}
     >
       <div className="status-notice warning" role="alert">
-        {duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT" ? "⚠ " : ""}
+        {["ACTIVE_SCHEDULE_CONFLICT", "FIRST_TIMER_ONLY"].includes(duplicate?.code) ? "⚠ " : ""}
         {duplicate?.message || "You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one."}
       </div>
       <dl className="duplicate-details">
