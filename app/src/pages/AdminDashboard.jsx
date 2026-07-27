@@ -997,7 +997,7 @@ function PeopleView() {
 
 /* ---------- Membership tiers (admin-managed) ---------- */
 const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1,
-  benefits: "", classTags: "", active: true, sortOrder: 0 };
+  benefits: "", classTags: "", firstTimerOnly: false, active: true, sortOrder: 0 };
 function TiersView() {
   const [tiers, setTiers] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -1038,6 +1038,7 @@ function TiersView() {
               <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> Plan Amount</span></p>
               {t.description && <div className="sub">{t.description}</div>}
               <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
+              {t.firstTimerOnly && <div className="status-tag pending" style={{ marginTop: ".55rem" }}>First Timer Only</div>}
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
             </div>
@@ -1063,6 +1064,10 @@ function TiersView() {
             <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
               <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
+            <label style={{ display: "block", fontSize: "0.9rem", marginBottom: ".7rem" }}>
+              <input type="checkbox" checked={!!edit.firstTimerOnly}
+                onChange={(e) => setEdit({ ...edit, firstTimerOnly: e.target.checked })} /> First Timer Only
+            </label>
             {edit.id && <label style={{ fontSize: "0.9rem" }}><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Active</label>}
           </div>
         )}

@@ -9,6 +9,7 @@ import { asyncHandler } from "../utils/http.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
+import { hasPriorClientActivity } from "../services/firstTimer.js";
 
 const router = Router();
 const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -33,6 +34,7 @@ function planSnapshot(tier) {
     currency: tier.currency,
     sessionCount: tier.sessionCount,
     unlimitedClasses: tier.unlimitedClasses,
+    firstTimerOnly: tier.firstTimerOnly,
     interval: tier.interval,
     intervalCount: tier.intervalCount,
     classTags: tier.classTags,
@@ -76,6 +78,12 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   ]);
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   if (!tier || !matchesClass(tier, session)) return res.status(400).json({ error: "The selected plan is not available for this class." });
+  if (tier.firstTimerOnly && await hasPriorClientActivity(email)) {
+    return res.status(409).json({
+      error: "This plan is available for first-time clients only.",
+      code: "FIRST_TIMER_ONLY",
+    });
+  }
 
   const scheduleConflict = await findActiveScheduleConflict({ email, session, tier });
   if (scheduleConflict) {
@@ -154,6 +162,14 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
   if (["confirmed", "waitlisted"].includes(purchase.status)) return res.json({ order: purchase.toPublic() });
   if (!safeSession(purchase.session)) return res.status(409).json({ error: "This class is no longer available for booking." });
+  if (purchase.tier?.firstTimerOnly && await hasPriorClientActivity(purchase.email, {
+    excludePurchaseId: purchase._id,
+  })) {
+    return res.status(409).json({
+      error: "This plan is available for first-time clients only.",
+      code: "FIRST_TIMER_ONLY",
+    });
+  }
   const scheduleConflict = await findActiveScheduleConflict({
     email: purchase.email,
     session: purchase.session,

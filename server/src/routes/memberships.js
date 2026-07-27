@@ -9,6 +9,7 @@ import { applyEvent } from "../services/membership.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { User } from "../models/User.js";
 import { Booking } from "../models/Booking.js";
+import { hasPriorClientActivity } from "../services/firstTimer.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -176,6 +177,9 @@ router.post(
   asyncHandler(async (req, res) => {
     const tier = await MembershipTier.findById(req.body?.tierId);
     if (!tier || !tier.active) throw new HttpError(400, "Tier not found or inactive");
+    if (tier.firstTimerOnly && await hasPriorClientActivity(req.user.email)) {
+      throw new HttpError(409, "This plan is available for first-time clients only.");
+    }
     const existing = await Membership.findOne({
       client: req.user._id,
       source: "membership",

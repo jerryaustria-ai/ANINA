@@ -18,7 +18,7 @@ router.get(
 );
 
 const EDITABLE = ["name", "description", "amount", "currency", "interval", "intervalCount", "benefits",
-  "classTags", "sessionCount", "unlimitedClasses", "active", "sortOrder"];
+  "classTags", "sessionCount", "unlimitedClasses", "firstTimerOnly", "active", "sortOrder"];
 
 router.post(
   "/",

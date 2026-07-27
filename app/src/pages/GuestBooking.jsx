@@ -97,7 +97,7 @@ export default function GuestBooking() {
                 <input type="radio" name="tier" value={plan.id} checked={form.tierId === plan.id}
                   onChange={(e) => setForm({ ...form, tierId: e.target.value })} />
                 <div><strong>{plan.name}</strong><p>{plan.description}</p>
-                  <span>{validity(plan)}</span></div>
+                  <span>{validity(plan)}{plan.firstTimerOnly ? " · First Timer Only" : ""}</span></div>
                 <b>{money(plan.amount, plan.currency)}</b>
               </label>)}
             </div>

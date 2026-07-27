@@ -14,6 +14,7 @@ const tierSchema = new mongoose.Schema(
     classTags: { type: [String], default: [] },
     sessionCount: { type: Number, default: null, min: 1 },
     unlimitedClasses: { type: Boolean, default: false },
+    firstTimerOnly: { type: Boolean, default: false, index: true },
     active: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },
   },
@@ -33,6 +34,7 @@ tierSchema.methods.toPublic = function () {
     classTags: this.classTags,
     sessionCount: this.sessionCount,
     unlimitedClasses: this.unlimitedClasses,
+    firstTimerOnly: this.firstTimerOnly,
     active: this.active,
     sortOrder: this.sortOrder,
   };
