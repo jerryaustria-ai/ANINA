@@ -1,11 +1,25 @@
+import nodemailer from "nodemailer";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 
-const RESEND_KEY = process.env.RESEND_API_KEY || "";
 const FROM = process.env.EMAIL_FROM || "";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASSWORD = process.env.SMTP_PASSWORD || "";
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@aninawellness.com";
 const SUPPORT_PHONE = process.env.SUPPORT_PHONE || "";
 const LOGO_URL = process.env.EMAIL_LOGO_URL || "";
 const TIMEZONE = process.env.APP_TIMEZONE || "Asia/Manila";
+const smtpConfigured = Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASSWORD && FROM);
+const transporter = smtpConfigured
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+    })
+  : null;
 
 const money = (amount, currency = "PHP") =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(Number(amount || 0));
@@ -134,32 +148,26 @@ function renderEmail(purchase, type, details = {}) {
 }
 
 async function sendEmail(purchase, type, eventKey, details) {
-  if (!RESEND_KEY || !FROM) return { status: "skipped", id: "" };
+  if (!transporter) return { status: "skipped", id: "" };
   const content = renderEmail(purchase, type, details);
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
+  const result = await transporter.sendMail({
+    from: FROM,
+    to: purchase.email,
+    subject: content.subject,
+    html: content.html,
     headers: {
-      Authorization: `Bearer ${RESEND_KEY}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": `guest-${purchase._id}-${eventKey}`.slice(0, 256),
+      "X-ANINA-Event-Key": `guest-${purchase._id}-${eventKey}`.slice(0, 256),
     },
-    body: JSON.stringify({
-      from: FROM,
-      to: [purchase.email],
-      subject: content.subject,
-      html: content.html,
-      ...(details.qrCodeBase64 ? {
-        attachments: [{
-          filename: `anina-check-in-${purchase.referenceId}.png`,
-          content: details.qrCodeBase64,
-          content_id: "anina-booking-qr",
-        }],
-      } : {}),
-    }),
+    ...(details.qrCodeBase64 ? {
+      attachments: [{
+        filename: `anina-check-in-${purchase.referenceId}.png`,
+        content: Buffer.from(details.qrCodeBase64, "base64"),
+        contentType: "image/png",
+        cid: "anina-booking-qr",
+      }],
+    } : {}),
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || "Email could not be sent.");
-  return { status: "sent", id: data.id || "" };
+  return { status: "sent", id: result.messageId || "" };
 }
 
 export async function sendPurchaseStatusEmailOnce(purchaseId, type, eventKey, details = {}) {
