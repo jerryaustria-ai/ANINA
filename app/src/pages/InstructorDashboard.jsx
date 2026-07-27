@@ -125,6 +125,7 @@ export default function InstructorDashboard() {
 
   const s = manage?.session;
   const metMin = s && s.acceptedCount >= s.minToRun;
+  const classEnded = s && new Date(s.endAt) <= new Date();
 
   return (
     <div className="page">
@@ -186,21 +187,22 @@ export default function InstructorDashboard() {
         onClose={() => setManage(null)}
         title={s?.title}
         footer={s && <>
-          {s.status !== "cancelled" && <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>}
-          {["rejected", "changes_requested", "published"].includes(s.status) &&
+          {!classEnded && s.status !== "cancelled" && <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>}
+          {!classEnded && ["rejected", "changes_requested", "published"].includes(s.status) &&
             <button className="btn" onClick={() => openEdit(s)} disabled={busy}>Edit schedule</button>}
         </>}
       >
         {s && (
           <div>
-            <p className="meta-line">🗓 {fmtRange(s.startAt, s.endAt)} · 📍 {s.room?.name}</p>
+            {classEnded && <div className="status-notice success"><strong>Completed Class Attendance Form</strong><br />Record or update each client’s final attendance.</div>}
+            <p className="meta-line">🗓 {new Date(s.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })} · {new Date(s.startAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} – {new Date(s.endAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} · 📍 {s.room?.name}</p>
             {s.rejectionReason && <div className="status-notice warning"><strong>Rejected:</strong> {s.rejectionReason}</div>}
             {s.changeRequestNotes && <div className="status-notice warning"><strong>Changes requested:</strong> {s.changeRequestNotes}</div>}
             <div className="meta-line headcount">
               👥 {s.acceptedCount}/{s.minToRun} min ·
               <span className={"meter" + (metMin ? " met" : "")}><span style={{ width: `${Math.min(100, (s.acceptedCount / s.capacity) * 100)}%` }} /></span>
               {s.acceptedCount}/{s.capacity} seats
-              <span className={"status-tag " + s.status}>{STATUS_LABEL[s.status]}</span>
+              <span className={"status-tag " + (classEnded ? "completed" : s.status)}>{classEnded ? "Completed" : STATUS_LABEL[s.status]}</span>
             </div>
             {metMin && s.status === "published" && <p className="meta-line">This class has reached its minimum client count.</p>}
 
@@ -216,11 +218,11 @@ export default function InstructorDashboard() {
                       <button className="btn sm" onClick={() => decide(b.id, "accept")} disabled={busy}>Accept</button>
                       <button className="btn danger sm" onClick={() => decide(b.id, "decline")} disabled={busy}>Decline</button>
                     </>}
-                    {b.status === "accepted" && <button className="btn ghost sm" onClick={() => decide(b.id, "waitlist")} disabled={busy}>Waitlist</button>}
-                    {new Date(s.endAt) <= new Date() && ["accepted", "attended", "no_show"].includes(b.status) && <>
+                    {!classEnded && b.status === "accepted" && <button className="btn ghost sm" onClick={() => decide(b.id, "waitlist")} disabled={busy}>Waitlist</button>}
+                    {["accepted", "attended", "no_show"].includes(b.status) && <>
                       <button className="btn sm" onClick={() => recordAttendance(b.id, "present")} disabled={busy}>Present</button>
                       <button className="btn ghost sm" onClick={() => recordAttendance(b.id, "absent")} disabled={busy}>Absent</button>
-                      <button className="btn danger sm" onClick={() => recordAttendance(b.id, "no_show")} disabled={busy}>No Show</button>
+                      {classEnded && <button className="btn danger sm" onClick={() => recordAttendance(b.id, "no_show")} disabled={busy}>No Show</button>}
                     </>}
                   </li>
                 ))}

@@ -215,6 +215,8 @@ function ScheduleView() {
     ["pending", "accepted", "waitlisted"].includes(booking.status));
   const historicalBookings = allSelectedBookings.filter((booking) =>
     !["pending", "accepted", "waitlisted"].includes(booking.status));
+  const selectedClassEnded = !!sel && new Date(sel.endAt) <= new Date();
+  const displayedBookings = selectedClassEnded ? allSelectedBookings : selectedBookings;
   const serviceNames = [...new Set(sessions.map((session) => session.title).filter(Boolean))];
 
   const toggle = (id) => setHidden((h) => { const n = new Set(h); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -297,6 +299,16 @@ function ScheduleView() {
       await api(`/bookings/${booking.id}/cancel`, { method: "POST" });
       await load(); toast.success("Booking cancelled.");
     } catch (e) { toast.error(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function recordAttendance(booking, status) {
+    setBusy(true);
+    try {
+      await api(`/bookings/${booking.id}/attendance`, { method: "POST", body: { status } });
+      await load();
+      toast.success(`Attendance marked as ${status === "present" ? "Present" : status === "absent" ? "Absent" : "No Show"}.`);
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
 
@@ -415,14 +427,14 @@ function ScheduleView() {
           <button className="btn danger" onClick={() => setScheduleReview({ session: sel, action: "reject", text: "" })} disabled={busy}>Reject</button>
           <button className="btn clay" onClick={() => setScheduleReview({ session: sel, action: "changes", text: "" })} disabled={busy}>Request Changes</button>
           <button className="btn" onClick={() => approveSchedule(sel)} disabled={busy}>Approve &amp; Publish</button>
-        </> : <>
+        </> : !selectedClassEnded ? <>
           <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
           {sel.status === "cancelled" &&
             sel.cancelledByRole === "instructor" &&
             String(sel.cancelledBy) === String(sel.instructor?.id) &&
             <button className="btn danger" onClick={() => deleteSchedule(sel)} disabled={busy}>Delete Session</button>}
           {sel.status !== "cancelled" && <button className="btn danger" onClick={() => cancelSchedule(sel)} disabled={busy}>Cancel Session</button>}
-        </>}</>}>
+        </> : null}</>}>
         {sel && (
           <div>
             <div className="inst-row">
@@ -432,10 +444,11 @@ function ScheduleView() {
                 <div className="inst-label">Instructor</div>
               </div>
             </div>
-            <p className="meta-line">🗓 {fmtRange(sel.startAt, sel.endAt)}</p>
+            {selectedClassEnded && <div className="status-notice success"><strong>Completed Class Attendance Form</strong><br />Record or update each client’s final attendance.</div>}
+            <p className="meta-line">🗓 {new Date(sel.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })} · {new Date(sel.startAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} – {new Date(sel.endAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</p>
             <p className="meta-line">📍 {sel.room?.name}</p>
             <p className="meta-line">👥 {sel.acceptedCount}/{sel.minToRun} min · {sel.capacity} capacity</p>
-            <p className="meta-line">Status: <span className={"status-tag " + sel.status}>{STATUS_LABEL[sel.status]}</span></p>
+            <p className="meta-line">Status: <span className={"status-tag " + (selectedClassEnded ? "completed" : sel.status)}>{selectedClassEnded ? "Completed" : STATUS_LABEL[sel.status]}</span></p>
             {sel.status === "cancelled" && <p className="meta-line">
               Cancelled by: <strong>{sel.cancelledByRole === "instructor" &&
                 String(sel.cancelledBy) === String(sel.instructor?.id)
@@ -446,22 +459,27 @@ function ScheduleView() {
               {sel.cancelledAt ? ` · ${new Date(sel.cancelledAt).toLocaleString()}` : ""}
             </p>}
             <div className="schedule-detail-head"><h4>Client bookings</h4>
-              {sel.status === "published" && sel.isPublished &&
+              {!selectedClassEnded && sel.status === "published" && sel.isPublished &&
                 <button className="btn sm" onClick={() => setAssign({ sessionId: sel.id, clientIds: selectedBookings.map((booking) => booking.client?.id).filter(Boolean), capacity: sel.capacity })}>Manage clients</button>}</div>
-            <p className="meta-line"><strong>{selectedBookings.length}</strong> assigned · <strong>{Math.max(0, sel.capacity - selectedBookings.length)}</strong> remaining slots</p>
-            {selectedBookings.length === 0 ? <p className="meta-line">No active client bookings.</p> :
-              selectedBookings.map((booking) => (
+            <p className="meta-line"><strong>{displayedBookings.length}</strong> assigned · <strong>{Math.max(0, sel.capacity - displayedBookings.length)}</strong> remaining slots</p>
+            {displayedBookings.length === 0 ? <p className="meta-line">No client bookings.</p> :
+              displayedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
-                  <div><strong>{booking.client?.name || "Client"}</strong><span>{booking.status}{booking.paymentStatus === "paid" ? " · Paid" : ""}</span></div>
+                  <div><strong>{booking.client?.name || "Client"}</strong><span>{selectedClassEnded ? booking.attendanceStatus === "present" ? "Present" : booking.attendanceStatus === "absent" ? "Absent" : booking.attendanceStatus === "no_show" ? "No Show" : "Attendance Pending" : booking.status}{booking.paymentStatus === "paid" ? " · Paid" : ""}</span></div>
                   <div className="schedule-booking-actions">
-                    {!["cancelled", "declined"].includes(booking.status) &&
+                    {!selectedClassEnded && !["cancelled", "declined"].includes(booking.status) &&
                       <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
-                    {["pending", "accepted", "waitlisted"].includes(booking.status) &&
+                    {!selectedClassEnded && ["pending", "accepted", "waitlisted"].includes(booking.status) &&
                       <button className="btn danger sm" onClick={() => cancelBooking(booking)} disabled={busy}>Cancel</button>}
+                    {selectedClassEnded && ["accepted", "attended", "no_show"].includes(booking.status) && <>
+                      <button className="btn sm" onClick={() => recordAttendance(booking, "present")} disabled={busy}>Present</button>
+                      <button className="btn ghost sm" onClick={() => recordAttendance(booking, "absent")} disabled={busy}>Absent</button>
+                      <button className="btn danger sm" onClick={() => recordAttendance(booking, "no_show")} disabled={busy}>No Show</button>
+                    </>}
                   </div>
                 </div>
               ))}
-            {historicalBookings.length > 0 && <>
+            {!selectedClassEnded && historicalBookings.length > 0 && <>
               <h4 className="schedule-history-title">Inactive booking history</h4>
               {historicalBookings.map((booking) => (
                 <div className="schedule-booking history" key={booking.id}>

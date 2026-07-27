@@ -340,9 +340,7 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
-    if (new Date(booking.session.endAt) > new Date()) {
-      throw new HttpError(409, "Attendance can only be recorded after the class has ended.");
-    }
+    const classEnded = new Date(booking.session.endAt) <= new Date();
     if (booking.session.status === "cancelled") {
       throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
     }
@@ -359,7 +357,9 @@ router.post(
     booking.attendanceStatus = attendanceStatus;
     booking.attendanceRecordedAt = new Date();
     booking.attendanceRecordedBy = req.user._id;
-    booking.status = attendanceStatus === "present" ? "attended" : "no_show";
+    // Before class end, attendance is provisional and the confirmed booking
+    // remains active. Once the class has ended, persist the final outcome.
+    if (classEnded) booking.status = attendanceStatus === "present" ? "attended" : "no_show";
     await booking.save();
     await recordBookingAudit({
       booking,
