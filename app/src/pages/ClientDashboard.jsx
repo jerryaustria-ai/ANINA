@@ -5,6 +5,7 @@ import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
+import { useScheduleRefresh } from "../useScheduleRefresh.js";
 import { fmtRange, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
@@ -56,6 +57,7 @@ export default function ClientDashboard() {
     setPurchases(purchaseHistory.purchases);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useScheduleRefresh(load);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("schedule");
     const session = id && sessions.find((item) => item.id === id);

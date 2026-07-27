@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { fmtTime } from "../util.js";
+import { useScheduleRefresh } from "../useScheduleRefresh.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -74,6 +75,7 @@ export default function PublicSchedule() {
       .catch((error) => active && setState({ loading: false, error: error.message }));
     return () => { active = false; };
   }, [weekStart.getTime(), reloadKey]);
+  useScheduleRefresh(() => setReloadKey((key) => key + 1));
 
   function bookingState(session) {
     if (new Date(session.endAt) <= new Date()) return { label: "Closed", button: "Class Finished", disabled: true };

@@ -11,6 +11,15 @@ export function getToken() {
   return token;
 }
 
+function notifyScheduleChanged(path, method) {
+  if (method === "GET" || (!path.startsWith("/sessions") && !path.startsWith("/bookings"))) return;
+  const revision = JSON.stringify({ at: Date.now(), path, method });
+  localStorage.setItem("anina_schedule_revision", revision);
+  window.dispatchEvent(new CustomEvent("anina:schedule-changed", {
+    detail: { path, method },
+  }));
+}
+
 export async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(BASE + path, {
     method,
@@ -28,5 +37,6 @@ export async function api(path, { method = "GET", body } = {}) {
     err.details = data.details;
     throw err;
   }
+  notifyScheduleChanged(path, method.toUpperCase());
   return data;
 }

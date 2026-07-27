@@ -4,6 +4,7 @@ import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
+import { useScheduleRefresh } from "../useScheduleRefresh.js";
 import { fmtRange, toLocalInput, dateAtHour, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
@@ -27,6 +28,7 @@ export default function InstructorDashboard() {
     setSessions(sessions);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useScheduleRefresh(load);
   useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)).catch(() => {}); }, []);
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((value) => value + 1), 30000);

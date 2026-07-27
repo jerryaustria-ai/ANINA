@@ -4,6 +4,7 @@ import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
+import { useScheduleRefresh } from "../useScheduleRefresh.js";
 import { fmtRange, fmtMoney, STATUS_LABEL, toLocalInput } from "../util.js";
 import { toast } from "react-toastify";
 import { Link } from "react-router-dom";
@@ -190,6 +191,7 @@ function ScheduleView() {
     if (sel) setSel(sessionData.sessions.find((session) => session.id === sel.id) || null);
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
+  useScheduleRefresh(load);
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((value) => value + 1), 30000);
     return () => window.clearInterval(timer);
