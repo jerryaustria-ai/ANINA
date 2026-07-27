@@ -1013,10 +1013,15 @@ function TiersView() {
     try {
       const { sessionCount: _sessionCount, unlimitedClasses: _unlimitedClasses, ...planFields } = edit;
       const body = { ...planFields, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
+        firstTimerOnly: edit.firstTimerOnly === true,
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
         classTags: String(edit.classTags || "").split(",").map((s) => s.trim()).filter(Boolean) };
-      if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
-      else await api("/tiers", { method: "POST", body });
+      const result = edit.id
+        ? await api(`/tiers/${edit.id}`, { method: "PATCH", body })
+        : await api("/tiers", { method: "POST", body });
+      if (result.tier?.firstTimerOnly !== body.firstTimerOnly) {
+        throw new Error("The First Timer Only setting was not saved. Please retry.");
+      }
       const wasEdit = !!edit.id;
       setEdit(null); await load(); toast.success(wasEdit ? "Class plan updated." : "Class plan created.");
     } catch (e) { toast.error(e.message); }
@@ -1064,9 +1069,10 @@ function TiersView() {
             <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
               <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
-            <label style={{ display: "block", fontSize: "0.9rem", marginBottom: ".7rem" }}>
-              <input type="checkbox" checked={!!edit.firstTimerOnly}
-                onChange={(e) => setEdit({ ...edit, firstTimerOnly: e.target.checked })} /> First Timer Only
+            <label className="plan-checkbox" htmlFor="first-timer-only">
+              <input id="first-timer-only" type="checkbox" checked={edit.firstTimerOnly === true}
+                onChange={(e) => setEdit((current) => ({ ...current, firstTimerOnly: e.target.checked }))} />
+              <span><strong>First Timer Only</strong><small>Restrict this plan to clients without previous bookings, memberships, or successful payments.</small></span>
             </label>
             {edit.id && <label style={{ fontSize: "0.9rem" }}><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Active</label>}
           </div>

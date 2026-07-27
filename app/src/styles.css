@@ -295,6 +295,11 @@ a { color:var(--sage-deep); }
 .client-checklist label { display:flex; align-items:center; gap:0.55rem; padding:0.5rem 0.2rem; border-bottom:1px solid var(--line); cursor:pointer; }
 .client-checklist label.disabled { opacity:0.45; cursor:not-allowed; }
 .client-checklist label input { width:auto; }
+.plan-checkbox { display:flex; align-items:flex-start; gap:.65rem; margin:.25rem 0 .8rem; padding:.75rem;
+  border:1px solid var(--line); border-radius:8px; cursor:pointer; background:var(--paper); }
+.plan-checkbox input { width:auto; margin:.18rem 0 0; accent-color:var(--sage); cursor:pointer; }
+.plan-checkbox span { display:flex; flex-direction:column; gap:.15rem; }
+.plan-checkbox small { color:var(--ink-mute); font-weight:400; line-height:1.35; }
 .client-checklist label span { display:flex; flex-direction:column; font-size:0.82rem; }
 .client-checklist label small { color:var(--ink-mute); }
 .unavailable-card { opacity:0.68; background:#f7f4ee; }

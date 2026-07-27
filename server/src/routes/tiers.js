@@ -26,7 +26,10 @@ router.post(
   asyncHandler(async (req, res) => {
     const { name, amount } = req.body || {};
     if (!name || amount == null) throw new HttpError(400, "name and amount are required");
-    const tier = await MembershipTier.create(req.body);
+    const tier = await MembershipTier.create({
+      ...req.body,
+      firstTimerOnly: req.body.firstTimerOnly === true,
+    });
     res.status(201).json({ tier: tier.toPublic() });
   })
 );
@@ -37,7 +40,11 @@ router.patch(
   asyncHandler(async (req, res) => {
     const tier = await MembershipTier.findById(req.params.id);
     if (!tier) throw new HttpError(404, "Tier not found");
-    EDITABLE.forEach((k) => { if (req.body[k] !== undefined) tier[k] = req.body[k]; });
+    EDITABLE.forEach((k) => {
+      if (req.body[k] !== undefined) {
+        tier[k] = k === "firstTimerOnly" ? req.body[k] === true : req.body[k];
+      }
+    });
     await tier.save();
     res.json({ tier: tier.toPublic() });
   })
