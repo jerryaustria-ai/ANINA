@@ -6,7 +6,6 @@ import { User } from "../models/User.js";
 
 const ACTIVE_BOOKING_STATUSES = ["pending", "accepted", "waitlisted"];
 const ACTIVE_PURCHASE_STATUSES = [
-  "payment_pending",
   "paid",
   "pending_confirmation",
   "confirmed",
