@@ -17,6 +17,7 @@ import webhookRoutes from "./routes/webhooks.js";
 import notificationRoutes from "./routes/notifications.js";
 import auditLogRoutes from "./routes/auditLogs.js";
 import guestCheckoutRoutes from "./routes/guestCheckout.js";
+import checkInRoutes from "./routes/checkIn.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -38,6 +39,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/guest-checkout", guestCheckoutRoutes);
+app.use("/api/check-in", checkInRoutes);
 
 // In production, serve the Vite build from this same web service. API typos
 // remain JSON 404s; browser routes fall back to React's index.html.

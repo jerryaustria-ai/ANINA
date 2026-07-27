@@ -88,6 +88,8 @@ function renderEmail(purchase, type, details = {}) {
     ["Booking reference", purchase.referenceId],
     ["Class", session?.title || "—"],
     ["Schedule", `${formatDateTime(session?.startAt)}${session?.endAt ? ` – ${new Date(session.endAt).toLocaleTimeString("en-PH", { timeZone: TIMEZONE, hour: "numeric", minute: "2-digit" })}` : ""}`],
+    ["Instructor", session?.instructor?.name || "—"],
+    ["Location", session?.room?.location || session?.room?.name || "—"],
     ["Selected plan", plan.name],
     ["Sessions / classes", sessionsLabel(plan)],
     ["Plan validity", validityLabel(plan)],
@@ -114,6 +116,11 @@ function renderEmail(purchase, type, details = {}) {
               <td align="right" style="padding:10px 14px;border-bottom:1px solid #f1ece6;font-size:13px;font-weight:600">${escape(value)}</td></tr>`).join("")}
           </table>
           ${receipt ? `<p style="margin:20px 0"><a href="${escape(receipt)}" style="display:inline-block;padding:12px 18px;background:#586951;color:#fff;text-decoration:none;border-radius:6px">View receipt / invoice</a></p>` : ""}
+          ${details.qrCodeBase64 ? `<div style="margin:24px 0;padding:20px;text-align:center;background:#faf7f2;border:1px solid #eee7df;border-radius:8px">
+            <h2 style="margin:0 0 8px;font:400 20px Georgia,serif">Your class check-in QR code</h2>
+            <p style="margin:0 0 14px;color:#5c554e;font-size:13px">Present this single-use code to your Instructor or reception at check-in.</p>
+            <img src="cid:anina-booking-qr" width="220" height="220" alt="Booking check-in QR code" style="display:block;margin:auto">
+          </div>` : ""}
           <h2 style="margin:26px 0 8px;font:400 20px Georgia,serif">Next steps</h2>
           <p style="margin:0;line-height:1.65;color:#5c554e">${copy.next}</p>
           <p style="margin:24px 0 0">Thank you for choosing ANINA Wellness Sanctuary.</p>
@@ -136,7 +143,19 @@ async function sendEmail(purchase, type, eventKey, details) {
       "Content-Type": "application/json",
       "Idempotency-Key": `guest-${purchase._id}-${eventKey}`.slice(0, 256),
     },
-    body: JSON.stringify({ from: FROM, to: [purchase.email], subject: content.subject, html: content.html }),
+    body: JSON.stringify({
+      from: FROM,
+      to: [purchase.email],
+      subject: content.subject,
+      html: content.html,
+      ...(details.qrCodeBase64 ? {
+        attachments: [{
+          filename: `anina-check-in-${purchase.referenceId}.png`,
+          content: details.qrCodeBase64,
+          content_id: "anina-booking-qr",
+        }],
+      } : {}),
+    }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.message || "Email could not be sent.");

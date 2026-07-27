@@ -6,6 +6,8 @@ import { User } from "../models/User.js";
 import { claimSeat } from "./capacity.js";
 import { sendPurchaseStatusEmailOnce } from "./email.js";
 import { createNotification, notifyAdmins } from "./notifications.js";
+import QRCode from "qrcode";
+import { issueCheckInToken } from "./checkIn.js";
 
 function periodEnd(tier) {
   const date = new Date();
@@ -145,6 +147,16 @@ async function performFulfillment(purchaseId, payment = {}) {
   purchase.status = bookingStatus === "accepted" ? "confirmed" : "waitlisted";
   await purchase.save();
   await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
+  let qrCodeBase64 = "";
+  if (bookingStatus === "accepted") {
+    const checkInToken = await issueCheckInToken(booking._id);
+    const qrDataUrl = await QRCode.toDataURL(checkInToken, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 440,
+    });
+    qrCodeBase64 = qrDataUrl.split(",")[1] || "";
+  }
 
   await Promise.all([
     createNotification({
@@ -172,7 +184,7 @@ async function performFulfillment(purchaseId, payment = {}) {
       purchase._id,
       "payment_successful",
       `payment-successful:${purchase.paymentId || purchase.referenceId}`,
-      { paymentDate: purchase.paidAt, receiptUrl: purchase.receiptUrl }
+      { paymentDate: purchase.paidAt, receiptUrl: purchase.receiptUrl, qrCodeBase64 }
     );
   } catch (error) {
     console.warn("Guest confirmation email failed:", error.message);

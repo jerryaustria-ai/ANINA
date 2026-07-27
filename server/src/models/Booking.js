@@ -33,6 +33,10 @@ const bookingSchema = new mongoose.Schema(
     },
     attendanceRecordedAt: { type: Date, default: null },
     attendanceRecordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    checkInTokenHash: { type: String, default: "", index: true, select: false },
+    checkInTokenIssuedAt: { type: Date, default: null },
+    checkInUsedAt: { type: Date, default: null },
+    checkedInBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
@@ -55,6 +59,7 @@ bookingSchema.methods.toPublic = function () {
       : this.status === "no_show" && (!this.attendanceStatus || this.attendanceStatus === "pending") ? "no_show"
         : this.attendanceStatus || "pending",
     attendanceRecordedAt: this.attendanceRecordedAt,
+    checkInUsedAt: this.checkInUsedAt,
     purchase: this.purchase,
     createdAt: this.createdAt,
   };

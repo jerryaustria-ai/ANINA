@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, NavLink, useNavigate } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { useAuth } from "./auth.jsx";
 import Login from "./pages/Login.jsx";
 import ClientDashboard from "./pages/ClientDashboard.jsx";
@@ -13,14 +14,15 @@ import GuestBooking from "./pages/GuestBooking.jsx";
 import GuestCheckout from "./pages/GuestCheckout.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
 import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
+const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
 function Nav() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const tabs = {
     client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Memberships"]],
-    instructor: [["/dashboard", "My Classes"]],
-    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
+    instructor: [["/dashboard", "My Classes"], ["/dashboard/check-in", "QR Check-in"]],
+    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
   }[user.role] || [];
 
   return (
@@ -54,6 +56,9 @@ function Dashboard() {
         {user.role === "client" && <Route index element={<ClientDashboard />} />}
         {user.role === "client" && <Route path="membership" element={<ClientMembership />} />}
         {user.role === "instructor" && <Route index element={<InstructorDashboard />} />}
+        {["admin", "instructor"].includes(user.role) && <Route path="check-in" element={
+          <Suspense fallback={<div className="spinner">Loading scanner…</div>}><CheckInScanner /></Suspense>
+        } />}
         {user.role === "admin" && (
           <>
             <Route index element={<AdminDashboard view="schedule" />} />
