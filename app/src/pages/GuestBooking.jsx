@@ -95,7 +95,7 @@ export default function GuestBooking() {
                 <input type="radio" name="tier" value={plan.id} checked={form.tierId === plan.id}
                   onChange={(e) => setForm({ ...form, tierId: e.target.value })} />
                 <div><strong>{plan.name}</strong><p>{plan.description}</p>
-                  <span>{plan.unlimitedClasses ? "Unlimited Classes" : `${plan.sessionCount || 1} Session${(plan.sessionCount || 1) === 1 ? "" : "s"}`} · {validity(plan)}</span></div>
+                  <span>{validity(plan)}</span></div>
                 <b>{money(plan.amount, plan.currency)}</b>
               </label>)}
             </div>
@@ -132,7 +132,6 @@ export default function GuestBooking() {
       <p>You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one.</p>
       <dl className="duplicate-details">
         {duplicate?.existingPlanName && <div><dt>Existing Plan Name</dt><dd>{duplicate.existingPlanName}</dd></div>}
-        {duplicate?.remainingSessions != null && <div><dt>Remaining Sessions</dt><dd>{duplicate.remainingSessions}</dd></div>}
         {duplicate?.expirationDate && <div><dt>Expiration Date</dt><dd>{new Date(duplicate.expirationDate).toLocaleDateString("en-PH", { dateStyle: "medium" })}</dd></div>}
         {duplicate?.bookingReference && <div><dt>Booking Reference</dt><dd>{duplicate.bookingReference}</dd></div>}
       </dl>

@@ -9,8 +9,6 @@ const date = (value, withTime = false) => value
     ? { dateStyle: "medium", timeStyle: "short" }
     : { dateStyle: "medium" })
   : "—";
-const sessions = (value, unlimited) => unlimited ? "Unlimited" : (value ?? "—");
-
 export default function ClientRecordDetails() {
   const { clientId } = useParams();
   const [data, setData] = useState(null);
@@ -28,7 +26,7 @@ export default function ClientRecordDetails() {
   useEffect(() => { load(); }, [clientId]);
 
   async function cancelPlan(plan) {
-    if (!window.confirm(`Cancel ${plan.purchasedPlan}? The remaining sessions will no longer be usable.`)) return;
+    if (!window.confirm(`Cancel ${plan.purchasedPlan}? This plan will no longer be usable.`)) return;
     setBusy(plan.membershipId);
     try {
       await api(`/memberships/${plan.membershipId}/cancel`, { method: "POST" });
@@ -74,9 +72,6 @@ export default function ClientRecordDetails() {
             <div><dt>Payment Method</dt><dd>{plan.paymentMethod}</dd></div>
             <div><dt>Payment Date</dt><dd>{date(plan.paymentDate, true)}</dd></div>
             {plan.membershipType === "one_time" ? <>
-              <div><dt>Total Sessions</dt><dd>{sessions(plan.includedSessions, plan.unlimitedClasses)}</dd></div>
-              <div><dt>Used Sessions</dt><dd>{sessions(plan.usedSessions, plan.unlimitedClasses)}</dd></div>
-              <div><dt>Remaining Sessions</dt><dd>{sessions(plan.remainingSessions, plan.unlimitedClasses)}</dd></div>
               <div><dt>Start Date</dt><dd>{date(plan.startDate)}</dd></div>
               <div><dt>Expiration Date</dt><dd>{date(plan.expirationDate)}</dd></div>
             </> : <>

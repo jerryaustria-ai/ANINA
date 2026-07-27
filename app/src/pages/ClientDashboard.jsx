@@ -146,7 +146,7 @@ export default function ClientDashboard() {
       )}
       {membership?.activeNow && membership.source === "guest_checkout" && (
         <div className="status-notice success">
-          {membership.tier?.name} is active · {membership.unlimitedClasses ? "Unlimited classes" : `${membership.sessionsRemaining ?? 0} session credits remaining`}
+          {membership.tier?.name} is active
         </div>
       )}
 
@@ -209,7 +209,6 @@ export default function ClientDashboard() {
               <dl>
                 <div><dt>Schedule</dt><dd>{purchase.session ? fmtRange(purchase.session.startAt, purchase.session.endAt) : "—"}</dd></div>
                 <div><dt>Purchased plan</dt><dd>{purchase.plan?.name || "—"}</dd></div>
-                <div><dt>Sessions</dt><dd>{purchase.plan?.unlimitedClasses ? "Unlimited" : (purchase.plan?.sessionCount || 1)}</dd></div>
                 <div><dt>Validity</dt><dd>{purchaseValidity(purchase.plan)}</dd></div>
                 <div><dt>Amount paid</dt><dd>{purchaseMoney(purchase.totalAmount, purchase.currency)}</dd></div>
                 <div><dt>Booking date</dt><dd>{new Date(purchase.createdAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</dd></div>

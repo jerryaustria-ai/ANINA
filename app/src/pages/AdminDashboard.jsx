@@ -997,7 +997,7 @@ function PeopleView() {
 
 /* ---------- Membership tiers (admin-managed) ---------- */
 const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1,
-  benefits: "", classTags: "", sessionCount: 10, unlimitedClasses: false, active: true, sortOrder: 0 };
+  benefits: "", classTags: "", active: true, sortOrder: 0 };
 function TiersView() {
   const [tiers, setTiers] = useState([]);
   const [edit, setEdit] = useState(null);
@@ -1011,8 +1011,8 @@ function TiersView() {
   async function save() {
     setBusy(true);
     try {
-      const body = { ...edit, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
-        sessionCount: edit.unlimitedClasses ? null : Number(edit.sessionCount || 1),
+      const { sessionCount: _sessionCount, unlimitedClasses: _unlimitedClasses, ...planFields } = edit;
+      const body = { ...planFields, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
         classTags: String(edit.classTags || "").split(",").map((s) => s.trim()).filter(Boolean) };
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
@@ -1037,7 +1037,7 @@ function TiersView() {
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
               <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> Plan Amount</span></p>
               {t.description && <div className="sub">{t.description}</div>}
-              <div className="sub">{t.unlimitedClasses ? "Unlimited classes" : `${t.sessionCount || 1} sessions`} · Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
+              <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
             </div>
@@ -1062,12 +1062,6 @@ function TiersView() {
             </div>
             <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
               <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
-            <div className="field row">
-              <div><label>Sessions included</label><input type="number" min="1" disabled={edit.unlimitedClasses}
-                value={edit.sessionCount} onChange={(e) => setEdit({ ...edit, sessionCount: e.target.value })} /></div>
-              <label style={{ alignSelf: "end", paddingBottom: ".65rem" }}><input type="checkbox" checked={edit.unlimitedClasses}
-                onChange={(e) => setEdit({ ...edit, unlimitedClasses: e.target.checked })} /> Unlimited classes</label>
-            </div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
             {edit.id && <label style={{ fontSize: "0.9rem" }}><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Active</label>}
           </div>
@@ -1083,7 +1077,6 @@ function MembershipsView() {
   const load = () => api("/memberships").then(({ memberships }) => setList(memberships));
   useEffect(() => { load(); }, []);
   const date = (value) => value ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "—";
-  const sessions = (value, unlimited) => unlimited ? "Unlimited" : (value ?? "—");
   const tag = (status) => status === "Active" ? "accepted"
     : status === "Fully Used" ? "pending"
       : ["Expired", "Cancelled"].includes(status) ? "cancelled" : "declined";
@@ -1095,7 +1088,7 @@ function MembershipsView() {
         <div className="purchase-table-wrap">
           <table className="purchase-table">
             <thead><tr><th>Client</th><th>Membership / Plan</th><th>Type</th><th>Class</th><th>Amount</th>
-              <th>Sessions / Billing</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
+              <th>Billing Cycle</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
               <th>Payment</th><th>Plan Status</th><th /></tr></thead>
             <tbody>{list.map((record) => <tr key={record.id}>
               <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
@@ -1105,9 +1098,7 @@ function MembershipsView() {
               <td>{record.className}</td>
               <td>{fmtMoney(record.amountPaid, record.currency)}
                 <small>{record.membershipType === "one_time" ? "One-Time Payment" : `per ${record.billingCycle}`}</small></td>
-              <td>{record.membershipType === "one_time"
-                ? <>{sessions(record.includedSessions, record.unlimitedClasses)} included<small>{sessions(record.usedSessions, record.unlimitedClasses)} used · {sessions(record.remainingSessions, record.unlimitedClasses)} remaining</small></>
-                : <>Billing cycle<small>{record.billingCycle}</small></>}</td>
+              <td>{record.membershipType === "one_time" ? "—" : record.billingCycle}</td>
               <td>{record.membershipType === "one_time" ? record.validityPeriod : record.renewalStatus}</td>
               <td>{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
               <td><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>

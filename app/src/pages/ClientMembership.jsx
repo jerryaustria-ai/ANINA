@@ -30,8 +30,7 @@ export default function ClientMembership() {
   }
   useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
 
-  const active = membership?.activeNow &&
-    (membership.unlimitedClasses || membership.sessionsRemaining == null || membership.sessionsRemaining > 0);
+  const active = membership?.activeNow;
 
   async function subscribe(tierId) {
     setBusy(true);
@@ -67,8 +66,6 @@ export default function ClientMembership() {
           <span>{membership.referenceId}</span></div><span className="status-tag accepted">Active</span></div>
         <p className="tier-amount">{fmtMoney(membership.tier?.amount, membership.tier?.currency)}
           <span className="tier-per"> One-Time Payment</span></p>
-        <div className="sub">{membership.unlimitedClasses ? "Unlimited sessions"
-          : `${membership.sessionsRemaining ?? 0} of ${membership.sessionsIncluded ?? "—"} sessions remaining`}</div>
         <div className="sub">Expires {date(membership.currentPeriodEnd)}</div>
       </article>}
 
@@ -102,7 +99,6 @@ export default function ClientMembership() {
           <div><dt>Class</dt><dd>{purchase.session?.title || "—"}</dd></div>
           <div><dt>Schedule</dt><dd>{purchase.session ? fmtRange(purchase.session.startAt, purchase.session.endAt) : "—"}</dd></div>
           <div><dt>Amount</dt><dd>{fmtMoney(purchase.totalAmount, purchase.currency)} One-Time Payment</dd></div>
-          <div><dt>Sessions</dt><dd>{purchase.plan?.unlimitedClasses ? "Unlimited" : (purchase.plan?.sessionCount || 1)}</dd></div>
           <div><dt>Validity</dt><dd>{validity(purchase.plan)}</dd></div>
           <div><dt>Payment Method</dt><dd>{purchase.paymentMethod || "Xendit"}</dd></div>
           <div><dt>Payment Date</dt><dd>{date(purchase.paidAt)}</dd></div>

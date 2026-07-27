@@ -80,7 +80,6 @@ export default function GuestCheckout() {
           <p>{order.session.title}</p>
           <p>{new Date(order.session.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })}, {fmtTime(order.session.startAt)}</p>
           <dl>
-            <div><dt>Sessions</dt><dd>{plan.unlimitedClasses ? "Unlimited classes" : `${plan.sessionCount || 1} session${(plan.sessionCount || 1) === 1 ? "" : "s"}`}</dd></div>
             <div><dt>Validity</dt><dd>{validity(plan)}</dd></div>
             <div><dt>Subtotal</dt><dd>{money(order.subtotal, order.currency)}</dd></div>
             <div><dt>VAT</dt><dd>{money(order.vatAmount, order.currency)}</dd></div>
