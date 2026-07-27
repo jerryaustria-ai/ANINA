@@ -13,25 +13,32 @@ const ACTIVE_PURCHASE_STATUSES = [
   "waitlisted",
 ];
 
-export async function findActiveScheduleConflict({ email, session, excludePurchaseId = null }) {
+function validityDays(plan) {
+  const count = Math.max(1, Number(plan?.intervalCount || 1));
+  const multipliers = { DAY: 1, WEEK: 7, MONTH: 30, YEAR: 365 };
+  return count * (multipliers[String(plan?.interval || "MONTH").toUpperCase()] || 30);
+}
+
+export async function findActiveScheduleConflict({ email, session, tier, excludePurchaseId = null }) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   const user = await User.findOne({ email: normalizedEmail }).select("_id");
+  const selectedValidityDays = validityDays(tier);
 
-  // Match the selected schedule itself and any other schedule occupying the
-  // exact same date/time window.
+  // This duplicate rule is intentionally exact: both start/end time and
+  // normalized validity days must match.
   const conflictingSessionIds = await ClassSession.find({
-    startAt: { $lt: session.endAt },
-    endAt: { $gt: session.startAt },
+    startAt: session.startAt,
+    endAt: session.endAt,
     status: { $in: ["open", "confirmed", "rescheduled", "published"] },
   }).distinct("_id");
 
-  const [booking, purchase] = await Promise.all([
-    user ? Booking.findOne({
+  const [bookings, purchases] = await Promise.all([
+    user ? Booking.find({
       client: user._id,
       session: { $in: conflictingSessionIds },
       status: { $in: ACTIVE_BOOKING_STATUSES },
-    }).populate("session purchase").sort("-createdAt") : null,
-    GuestPurchase.findOne({
+    }).populate("session purchase").sort("-createdAt") : [],
+    GuestPurchase.find({
       _id: excludePurchaseId ? { $ne: excludePurchaseId } : { $exists: true },
       email: normalizedEmail,
       session: { $in: conflictingSessionIds },
@@ -39,10 +46,16 @@ export async function findActiveScheduleConflict({ email, session, excludePurcha
     }).populate("session").sort("-createdAt"),
   ]);
 
-  const conflict = booking || purchase;
-  if (!conflict) return null;
+  const booking = bookings.find((item) =>
+    item.purchase?.planSnapshot &&
+    validityDays(item.purchase.planSnapshot) === selectedValidityDays
+  );
+  const purchase = purchases.find((item) =>
+    validityDays(item.planSnapshot) === selectedValidityDays
+  );
+  if (!booking && !purchase) return null;
 
-  const conflictingSession = conflict.session;
+  const conflictingSession = booking?.session || purchase?.session;
   const linkedPurchase = booking?.purchase;
   return {
     conflict: true,
@@ -51,6 +64,7 @@ export async function findActiveScheduleConflict({ email, session, excludePurcha
     className: conflictingSession?.title || session.title,
     startAt: conflictingSession?.startAt || session.startAt,
     endAt: conflictingSession?.endAt || session.endAt,
+    validityDays: selectedValidityDays,
   };
 }
 

@@ -77,10 +77,10 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   if (!tier || !matchesClass(tier, session)) return res.status(400).json({ error: "The selected plan is not available for this class." });
 
-  const scheduleConflict = await findActiveScheduleConflict({ email, session });
+  const scheduleConflict = await findActiveScheduleConflict({ email, session, tier });
   if (scheduleConflict) {
     return res.status(409).json({
-      error: "You already have an active booking for this date and time. Please choose a different schedule.",
+      error: "You already have an active class with the same validity period, date, and time.",
       code: "ACTIVE_SCHEDULE_CONFLICT",
       details: scheduleConflict,
     });
@@ -157,11 +157,12 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
   const scheduleConflict = await findActiveScheduleConflict({
     email: purchase.email,
     session: purchase.session,
+    tier: purchase.tier,
     excludePurchaseId: purchase._id,
   });
   if (scheduleConflict) {
     return res.status(409).json({
-      error: "You already have an active booking for this date and time. Please choose a different schedule.",
+      error: "You already have an active class with the same validity period, date, and time.",
       code: "ACTIVE_SCHEDULE_CONFLICT",
       details: scheduleConflict,
     });
