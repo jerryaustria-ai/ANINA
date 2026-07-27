@@ -352,6 +352,9 @@ router.post(
       throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
     }
     if (booking.status === "cancelled") throw new HttpError(409, "Attendance cannot be recorded for a cancelled booking.");
+    if (booking.checkInUsedAt && req.user.role !== "admin") {
+      throw new HttpError(409, "Attendance was confirmed by QR check-in and can only be changed by an Admin.");
+    }
     if (!["accepted", "attended", "no_show"].includes(booking.status)) {
       throw new HttpError(409, "Attendance can only be recorded for a confirmed booking.");
     }

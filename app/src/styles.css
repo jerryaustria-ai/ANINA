@@ -275,6 +275,7 @@ a { color:var(--sage-deep); }
 .status-tag { font-size:0.7rem; padding:0.15rem 0.55rem; border-radius:100px; text-transform:capitalize; }
 .status-tag.pending { background:#f6ecd6; color:#7a5a1a; }
 .status-tag.accepted { background:#e4efdb; color:var(--sage-deep); }
+.status-tag.present,.status-tag.fully_used,.status-tag.attended { background:#dcebd7; color:#2f6b3b; font-weight:700; }
 .status-tag.waitlisted { background:#e3e9f0; color:#3d5a80; }
 .status-tag.declined,.status-tag.cancelled { background:#f0e3e1; color:#8a3b30; }
 .status-tag.rescheduled { background:#e3e9f0; color:#3d5a80; }

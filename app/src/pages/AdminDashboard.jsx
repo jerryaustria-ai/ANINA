@@ -221,9 +221,9 @@ function ScheduleView() {
     session.status === "published" && session.isPublished && new Date(session.startAt) > new Date());
   const allSelectedBookings = sel ? bookings.filter((booking) => booking.session?.id === sel.id) : [];
   const selectedBookings = allSelectedBookings.filter((booking) =>
-    ["pending", "accepted", "waitlisted"].includes(booking.status));
+    ["pending", "accepted", "present", "waitlisted"].includes(booking.status));
   const historicalBookings = allSelectedBookings.filter((booking) =>
-    !["pending", "accepted", "waitlisted"].includes(booking.status));
+    !["pending", "accepted", "present", "waitlisted"].includes(booking.status));
   const serverNow = Date.now() + serverOffset;
   const selectedClassStarted = !!sel && serverNow >= new Date(sel.startAt).getTime();
   const selectedClassEnded = !!sel && serverNow >= new Date(sel.endAt).getTime();
@@ -245,7 +245,7 @@ function ScheduleView() {
 
   function editSchedule(session) {
     const clientIds = bookings.filter((booking) =>
-      booking.session?.id === session.id && ["pending", "accepted", "waitlisted"].includes(booking.status))
+      booking.session?.id === session.id && ["pending", "accepted", "present", "waitlisted"].includes(booking.status))
       .map((booking) => booking.client?.id).filter(Boolean);
     setEdit({
       id: session.id, title: session.title, type: session.type,
@@ -476,13 +476,16 @@ function ScheduleView() {
             {displayedBookings.length === 0 ? <p className="meta-line">No client bookings.</p> :
               displayedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
-                  <div><strong>{booking.client?.name || "Client"}</strong><span>{selectedClassEnded ? booking.attendanceStatus === "present" ? "Present" : booking.attendanceStatus === "absent" ? "Absent" : booking.attendanceStatus === "no_show" ? "No Show" : "Attendance Pending" : booking.status}{booking.paymentStatus === "paid" ? " · Paid" : ""}</span></div>
+                  <div><strong>{booking.client?.name || "Client"}</strong><span>
+                    <span className={"status-tag " + booking.status}>{STATUS_LABEL[booking.status] || booking.status}</span>
+                    {booking.paymentStatus === "paid" ? " · Paid" : ""}
+                  </span></div>
                   <div className="schedule-booking-actions">
                     {!selectedClassEnded && !["cancelled", "declined"].includes(booking.status) &&
                       <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
                     {!selectedClassEnded && ["pending", "accepted", "waitlisted"].includes(booking.status) &&
                       <button className="btn danger sm" onClick={() => cancelBooking(booking)} disabled={busy}>Cancel</button>}
-                    {selectedClassStarted && ["accepted", "attended", "no_show"].includes(booking.status) && <>
+                    {selectedClassStarted && ["accepted", "present", "fully_used", "attended", "no_show"].includes(booking.status) && <>
                       <button className="btn sm" onClick={() => recordAttendance(booking, "present")} disabled={busy}>Present</button>
                       <button className="btn ghost sm" onClick={() => recordAttendance(booking, "absent")} disabled={busy}>Absent</button>
                       <button className="btn danger sm" onClick={() => recordAttendance(booking, "no_show")} disabled={busy}>No Show</button>

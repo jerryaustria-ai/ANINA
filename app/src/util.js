@@ -46,4 +46,5 @@ export const STATUS_LABEL = {
   pending_approval: "Pending Approval", published: "Published", rejected: "Rejected",
   changes_requested: "Changes Requested", cancelled: "Cancelled", completed: "Completed",
   pending: "Pending", accepted: "Accepted", waitlisted: "Waitlisted", declined: "Declined",
+  present: "Present", fully_used: "Fully Used", attended: "Fully Used", no_show: "No Show",
 };

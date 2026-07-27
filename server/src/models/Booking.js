@@ -47,17 +47,22 @@ bookingSchema.index({ session: 1, client: 1 }, { unique: true });
 bookingSchema.methods.toPublic = function () {
   const cl = this.client && this.client.toPublic ? this.client.toPublic() : this.client;
   const se = this.session && this.session.toPublic ? this.session.toPublic() : this.session;
+  const attendanceStatus = this.status === "attended" ? "present"
+    : this.status === "no_show" && (!this.attendanceStatus || this.attendanceStatus === "pending") ? "no_show"
+      : this.attendanceStatus || "pending";
+  const classEnded = Boolean(se?.endAt && new Date(se.endAt) <= new Date());
+  const displayStatus = attendanceStatus === "present"
+    ? (classEnded ? "fully_used" : "present")
+    : this.status;
   return {
     id: this._id,
     session: se,
     client: cl,
-    status: this.status,
+    status: displayStatus,
     note: this.note,
     source: this.source,
     paymentStatus: this.paymentStatus,
-    attendanceStatus: this.status === "attended" ? "present"
-      : this.status === "no_show" && (!this.attendanceStatus || this.attendanceStatus === "pending") ? "no_show"
-        : this.attendanceStatus || "pending",
+    attendanceStatus,
     attendanceRecordedAt: this.attendanceRecordedAt,
     checkInUsedAt: this.checkInUsedAt,
     purchase: this.purchase,
