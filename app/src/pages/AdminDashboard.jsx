@@ -1126,14 +1126,13 @@ function MembershipsView() {
       {list.length === 0 ? <div className="empty">No memberships yet.</div> : (
         <div className="purchase-table-wrap">
           <table className="purchase-table">
-            <thead><tr><th>Client</th><th>Membership / Plan</th><th>Type</th><th>Class</th><th>Amount</th>
+            <thead><tr><th>Client</th><th>Membership / Plan</th><th>Class</th><th>Amount</th>
               <th>Billing Cycle</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
-              <th>Payment</th><th>Plan Status</th><th /></tr></thead>
+              <th>Payment</th><th>Plan Status</th></tr></thead>
             <tbody>{list.map((record) => <tr key={record.id}>
               <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
                 <small>{record.client?.email}</small></td>
               <td>{record.purchasedPlan}</td>
-              <td><span className={"status-tag " + (record.membershipType === "one_time" ? "pending" : "accepted")}>{record.membershipTypeLabel}</span></td>
               <td>{record.className}</td>
               <td>{fmtMoney(record.amountPaid, record.currency)}
                 <small>{record.membershipType === "one_time" ? "One-Time Payment" : `per ${record.billingCycle}`}</small></td>
@@ -1142,7 +1141,6 @@ function MembershipsView() {
               <td>{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
               <td><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>
               <td><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
-              <td><Link className="btn ghost sm" to={`/dashboard/clients/${record.client?.id}`}>View Details</Link></td>
             </tr>)}</tbody>
           </table>
         </div>
