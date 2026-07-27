@@ -1016,12 +1016,8 @@ function TiersView() {
         firstTimerOnly: edit.firstTimerOnly === true,
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
         classTags: String(edit.classTags || "").split(",").map((s) => s.trim()).filter(Boolean) };
-      const result = edit.id
-        ? await api(`/tiers/${edit.id}`, { method: "PATCH", body })
-        : await api("/tiers", { method: "POST", body });
-      if (result.tier?.firstTimerOnly !== body.firstTimerOnly) {
-        throw new Error("The First Timer Only setting was not saved. Please retry.");
-      }
+      if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
+      else await api("/tiers", { method: "POST", body });
       const wasEdit = !!edit.id;
       setEdit(null); await load(); toast.success(wasEdit ? "Class plan updated." : "Class plan created.");
     } catch (e) { toast.error(e.message); }
