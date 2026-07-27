@@ -25,6 +25,14 @@ const bookingSchema = new mongoose.Schema(
     source: { type: String, enum: ["client", "admin", "guest_checkout"], default: "client" },
     paymentStatus: { type: String, enum: ["unpaid", "pending", "paid", "refunded"], default: "unpaid" },
     purchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", default: null, index: true },
+    attendanceStatus: {
+      type: String,
+      enum: ["pending", "present", "absent", "no_show"],
+      default: "pending",
+      index: true,
+    },
+    attendanceRecordedAt: { type: Date, default: null },
+    attendanceRecordedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
@@ -43,6 +51,10 @@ bookingSchema.methods.toPublic = function () {
     note: this.note,
     source: this.source,
     paymentStatus: this.paymentStatus,
+    attendanceStatus: this.status === "attended" ? "present"
+      : this.status === "no_show" && (!this.attendanceStatus || this.attendanceStatus === "pending") ? "no_show"
+        : this.attendanceStatus || "pending",
+    attendanceRecordedAt: this.attendanceRecordedAt,
     purchase: this.purchase,
     createdAt: this.createdAt,
   };

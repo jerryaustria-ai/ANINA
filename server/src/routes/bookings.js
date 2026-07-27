@@ -334,6 +334,45 @@ router.post(
   })
 );
 
+// POST /api/bookings/:id/attendance { status: "present" | "absent" | "no_show" }
+router.post(
+  "/:id/attendance",
+  requireRole("instructor", "admin"),
+  asyncHandler(async (req, res) => {
+    const booking = await loadForDecision(req);
+    if (new Date(booking.session.endAt) > new Date()) {
+      throw new HttpError(409, "Attendance can only be recorded after the class has ended.");
+    }
+    if (booking.session.status === "cancelled") {
+      throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
+    }
+    if (booking.status === "cancelled") throw new HttpError(409, "Attendance cannot be recorded for a cancelled booking.");
+    if (!["accepted", "attended", "no_show"].includes(booking.status)) {
+      throw new HttpError(409, "Attendance can only be recorded for a confirmed booking.");
+    }
+    const attendanceStatus = String(req.body?.status || "").toLowerCase();
+    if (!["present", "absent", "no_show"].includes(attendanceStatus)) {
+      throw new HttpError(400, "Attendance status must be Present, Absent, or No Show.");
+    }
+
+    const previous = booking.toObject({ depopulate: true });
+    booking.attendanceStatus = attendanceStatus;
+    booking.attendanceRecordedAt = new Date();
+    booking.attendanceRecordedBy = req.user._id;
+    booking.status = attendanceStatus === "present" ? "attended" : "no_show";
+    await booking.save();
+    await recordBookingAudit({
+      booking,
+      session: booking.session,
+      actor: req.user,
+      action: "BOOKING_ATTENDANCE_RECORDED",
+      description: `Marked ${booking.session.title} attendance as ${attendanceStatus.replace("_", " ")}.`,
+      previousValue: previous,
+    });
+    res.json({ booking: booking.toPublic() });
+  })
+);
+
 // POST /api/bookings/:id/cancel — client cancels own booking (frees a seat).
 router.post(
   "/:id/cancel",

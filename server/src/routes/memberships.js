@@ -24,15 +24,6 @@ function appUrl(req) {
   return `${protocol}://${host}`;
 }
 
-function oneTimePlanStatus(membership) {
-  if (!membership) return "Inactive";
-  if (membership.status === "cancelled") return "Cancelled";
-  if (membership.status !== "active") return "Inactive";
-  if (membership.currentPeriodEnd && new Date(membership.currentPeriodEnd) <= new Date()) return "Expired";
-  if (!membership.unlimitedClasses && Number(membership.sessionsRemaining) <= 0) return "Fully Used";
-  return "Active";
-}
-
 function recurringPlanStatus(membership) {
   if (membership.status === "active") return "Active";
   if (membership.status === "cancelled") return "Cancelled";
@@ -64,17 +55,24 @@ function oneTimePurchaseRecord(purchase) {
   const expirationDate = purchaseValidityEnd(purchase);
   const startDate = purchase.paidAt || membership?.createdAt || purchase.createdAt;
   const paymentStatus = purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending";
-  let planStatus = oneTimePlanStatus(membership);
-  if (!membership && paymentStatus === "Paid") {
-    planStatus = new Date(expirationDate) <= new Date() ? "Expired"
-      : included != null && Number(remaining) <= 0 ? "Fully Used" : "Active";
-  }
-  if (["cancelled", "declined", "failed"].includes(purchase.status) ||
-      ["cancelled", "declined"].includes(booking?.status)) planStatus = "Inactive";
-  if (purchase.refundedAt) planStatus = "Inactive";
-  if (session?.status === "completed" || ["attended", "no_show"].includes(booking?.status)) {
-    planStatus = "Fully Used";
-  }
+  const now = new Date();
+  const classEnded = !!session?.endAt && new Date(session.endAt) <= now;
+  const attendanceStatus = booking?.status === "attended" ? "present"
+    : booking?.status === "no_show" && (!booking?.attendanceStatus || booking.attendanceStatus === "pending") ? "no_show"
+      : booking?.attendanceStatus || "pending";
+  let planStatus = "Active";
+  if (paymentStatus !== "Paid") planStatus = "Inactive";
+  else if (purchase.refundedAt) planStatus = "Inactive";
+  else if (membership && ["cancelled", "inactive"].includes(membership.status)) {
+    planStatus = membership.status === "cancelled" ? "Cancelled" : "Inactive";
+  } else if (["cancelled", "declined", "failed"].includes(purchase.status) ||
+      ["cancelled", "declined"].includes(booking?.status)) planStatus = "Cancelled";
+  else if (classEnded && attendanceStatus === "present") planStatus = "Fully Used";
+  else if (new Date(expirationDate) <= now) planStatus = "Expired";
+  else if (["absent", "no_show"].includes(attendanceStatus)) planStatus = attendanceStatus === "absent" ? "Absent" : "No Show";
+  else if (classEnded) planStatus = "Attendance Pending";
+  else if (booking?.status === "accepted") planStatus = "Upcoming";
+  else if (["pending", "waitlisted"].includes(booking?.status)) planStatus = "Unused";
   return {
     id: purchase._id,
     membershipType: "one_time",
@@ -118,7 +116,9 @@ function oneTimePurchaseRecord(purchase) {
     validityPeriod: `${purchase.planSnapshot?.intervalCount || 1} ${String(purchase.planSnapshot?.interval || "MONTH").toLowerCase()}${(purchase.planSnapshot?.intervalCount || 1) === 1 ? "" : "s"}`,
     planStatus,
     bookingStatus: booking?.status || "—",
-    attendanceStatus: ["attended", "no_show"].includes(booking?.status) ? booking.status : "Not recorded",
+    attendanceStatus: attendanceStatus === "present" ? "Present"
+      : attendanceStatus === "absent" ? "Absent"
+        : attendanceStatus === "no_show" ? "No Show" : "Not recorded",
   };
 }
 
@@ -355,11 +355,14 @@ router.get(
         const now = new Date();
         const startsOnTime = !record.startDate || new Date(record.startDate) <= now;
         const hasNotExpired = !record.expirationDate || new Date(record.expirationDate) > now;
+        const awaitingAttendance = record.membershipType === "one_time" &&
+          ["Upcoming", "Unused", "Attendance Pending"].includes(record.planStatus);
         const hasUsage = record.membershipType === "recurring" ||
           record.unlimitedClasses ||
           record.remainingSessions == null ||
-          Number(record.remainingSessions) > 0;
-        return record.planStatus === "Active" &&
+          Number(record.remainingSessions) > 0 ||
+          awaitingAttendance;
+        return ["Active", "Upcoming", "Unused", "Attendance Pending"].includes(record.planStatus) &&
           record.paymentStatus === "Paid" &&
           startsOnTime &&
           hasNotExpired &&

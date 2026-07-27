@@ -107,6 +107,15 @@ export default function InstructorDashboard() {
     catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
   }
+  async function recordAttendance(bookingId, status) {
+    setBusy(true);
+    try {
+      await api(`/bookings/${bookingId}/attendance`, { method: "POST", body: { status } });
+      await refreshManage();
+      toast.success(`Attendance marked as ${status === "present" ? "Present" : status === "absent" ? "Absent" : "No Show"}.`);
+    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
+    finally { setBusy(false); }
+  }
   async function sessionAction(action) {
     setBusy(true);
     try { await api(`/sessions/${manage.session.id}/${action}`, { method: "POST" }); await refreshManage(); toast.success(`Class ${action === "cancel" ? "cancelled" : "confirmed"}.`); }
@@ -208,6 +217,11 @@ export default function InstructorDashboard() {
                       <button className="btn danger sm" onClick={() => decide(b.id, "decline")} disabled={busy}>Decline</button>
                     </>}
                     {b.status === "accepted" && <button className="btn ghost sm" onClick={() => decide(b.id, "waitlist")} disabled={busy}>Waitlist</button>}
+                    {new Date(s.endAt) <= new Date() && ["accepted", "attended", "no_show"].includes(b.status) && <>
+                      <button className="btn sm" onClick={() => recordAttendance(b.id, "present")} disabled={busy}>Present</button>
+                      <button className="btn ghost sm" onClick={() => recordAttendance(b.id, "absent")} disabled={busy}>Absent</button>
+                      <button className="btn danger sm" onClick={() => recordAttendance(b.id, "no_show")} disabled={busy}>No Show</button>
+                    </>}
                   </li>
                 ))}
               </ul>
