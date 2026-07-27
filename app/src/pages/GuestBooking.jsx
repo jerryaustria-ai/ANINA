@@ -46,7 +46,9 @@ export default function GuestBooking() {
       sessionStorage.setItem(`guest_order_${result.order.id}`, result.token);
       navigate(`/guest/checkout/${result.order.id}?token=${result.token}`);
     } catch (error) {
-      if (error.code === "DUPLICATE_ACTIVE_PURCHASE") setDuplicate(error.details);
+      if (["DUPLICATE_ACTIVE_PURCHASE", "ACTIVE_SCHEDULE_CONFLICT"].includes(error.code)) {
+        setDuplicate({ ...error.details, code: error.code, message: error.message });
+      }
       else toast.error(error.message);
       setState((value) => ({ ...value, submitting: false }));
     }
@@ -121,16 +123,25 @@ export default function GuestBooking() {
     <Modal
       open={!!duplicate}
       onClose={() => setDuplicate(null)}
-      title="Duplicate Booking Detected"
+      title={duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT"
+        ? "Schedule Conflict Detected"
+        : "Duplicate Booking Detected"}
       footer={<>
-        <button className="btn" type="button" onClick={chooseDifferentPlan}>Choose a Different Plan</button>
+        {duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT"
+          ? <button className="btn" type="button" onClick={() => navigate("/schedule")}>Choose a Different Schedule</button>
+          : <button className="btn" type="button" onClick={chooseDifferentPlan}>Choose a Different Plan</button>}
         <button className="btn" type="button" onClick={() => navigate(getToken() ? "/dashboard" : "/login?next=/dashboard")}>View My Existing Booking</button>
         {duplicate?.allowAdminOverride && <button className="btn primary" type="button"
           onClick={() => { setDuplicate(null); createOrder(true); }}>Continue Anyway</button>}
       </>}
     >
-      <p>You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one.</p>
+      <div className="status-notice warning" role="alert">
+        {duplicate?.code === "ACTIVE_SCHEDULE_CONFLICT" ? "⚠ " : ""}
+        {duplicate?.message || "You already have an active booking or class plan matching this selection. Please review your existing booking before purchasing another one."}
+      </div>
       <dl className="duplicate-details">
+        {duplicate?.className && <div><dt>Existing Class</dt><dd>{duplicate.className}</dd></div>}
+        {duplicate?.startAt && <div><dt>Schedule</dt><dd>{new Date(duplicate.startAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</dd></div>}
         {duplicate?.existingPlanName && <div><dt>Existing Plan Name</dt><dd>{duplicate.existingPlanName}</dd></div>}
         {duplicate?.expirationDate && <div><dt>Expiration Date</dt><dd>{new Date(duplicate.expirationDate).toLocaleDateString("en-PH", { dateStyle: "medium" })}</dd></div>}
         {duplicate?.bookingReference && <div><dt>Booking Reference</dt><dd>{duplicate.bookingReference}</dd></div>}
