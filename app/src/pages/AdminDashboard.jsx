@@ -742,11 +742,38 @@ function ScheduleApprovalView() {
 
   const load = () => api("/sessions/approvals/pending").then(({ sessions }) => setSessions(sessions));
   useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
+  const requests = (() => {
+    const grouped = new Map();
+    sessions.forEach((session) => {
+      const key = session.recurrenceGroupId || `single:${session.id}`;
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          ...session,
+          requestId: key,
+          recurring: !!session.recurrenceGroupId,
+          occurrences: [],
+        });
+      }
+      grouped.get(key).occurrences.push(session);
+    });
+    return [...grouped.values()].map((request) => {
+      const occurrences = request.occurrences.sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+      return { ...request, ...occurrences[0], requestId: request.requestId, recurring: request.recurring, occurrences };
+    }).sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+  })();
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("schedule");
-    const session = id && sessions.find((item) => item.id === id);
-    if (session) setDetail(session);
+    const request = id && requests.find((item) => item.occurrences.some((occurrence) => occurrence.id === id));
+    if (request) openDetails(request);
   }, [sessions]);
+
+  function openDetails(request) {
+    setDetail({
+      request,
+      selectedIds: request.occurrences.map((occurrence) => occurrence.id),
+      errors: {},
+    });
+  }
 
   async function approve(session) {
     setBusy(true);
@@ -756,6 +783,40 @@ function ScheduleApprovalView() {
       setDetail(null); await load();
     } catch (error) { toast.error(error.message); }
     finally { setBusy(false); }
+  }
+
+  async function approveSelected() {
+    const selected = detail?.selectedIds || [];
+    if (!selected.length) return toast.warning("Select at least one schedule occurrence to approve.");
+    setBusy(true);
+    try {
+      const errors = {};
+      const approvedIds = [];
+      for (const occurrence of detail.request.occurrences.filter((item) => selected.includes(item.id))) {
+        try {
+          await api(`/sessions/${occurrence.id}/approve`, { method: "POST" });
+          approvedIds.push(occurrence.id);
+        } catch (error) {
+          errors[occurrence.id] = error.message || "This occurrence has a schedule conflict.";
+        }
+      }
+      const remaining = detail.request.occurrences.filter((item) => !approvedIds.includes(item.id));
+      if (approvedIds.length) {
+        toast.success(`${approvedIds.length} occurrence${approvedIds.length === 1 ? "" : "s"} approved and published.`);
+      }
+      if (Object.keys(errors).length) {
+        toast.warning("Some selected occurrences have conflicts and remain pending.");
+      }
+      await load();
+      if (!remaining.length) setDetail(null);
+      else setDetail({
+        request: { ...detail.request, occurrences: remaining },
+        selectedIds: selected.filter((id) => !approvedIds.includes(id)),
+        errors,
+      });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitReview() {
@@ -787,38 +848,78 @@ function ScheduleApprovalView() {
     finally { setBusy(false); }
   }
 
-  const details = (session) => <div className="approval-details">
+  const details = (session, occurrences = [session]) => {
+    const lastOccurrence = occurrences[occurrences.length - 1] || session;
+    return <div className="approval-details">
     <p><strong>{session.title}</strong></p>
     <p className="meta-line">Instructor: {session.instructor?.name}<br />
-      Date and time: {fmtRange(session.startAt, session.endAt)}<br />
+      {occurrences.length > 1
+        ? <>Recurring occurrences: {occurrences.length}<br />
+          Date range: {fmtRange(session.startAt, session.endAt)} through {fmtRange(lastOccurrence.startAt, lastOccurrence.endAt)}<br /></>
+        : <>Date and time: {fmtRange(session.startAt, session.endAt)}<br /></>}
       Location: {session.room?.name}{session.room?.location ? ` — ${session.room.location}` : ""}<br />
       Capacity: {session.capacity} · Minimum clients: {session.minToRun}<br />
       Type: {session.type}<br />
       Description / notes: {session.notes || "—"}<br />
       Submitted: {session.submittedAt ? new Date(session.submittedAt).toLocaleString() : "—"}<br />
       Status: {STATUS_LABEL[session.status] || session.status.replaceAll("_", " ")}</p>
-  </div>;
+    </div>;
+  };
 
   return <div className="page">
     <div className="page-head"><div><h1>Schedule Approval</h1><p>Review Instructor-submitted schedules before clients can see or book them.</p></div></div>
-    {!sessions.length ? <div className="empty">No schedules are waiting for approval.</div> :
-      <div className="grid-cards">{sessions.map((session) => <div className="card" key={session.id}>
-        {details(session)}
+    {!requests.length ? <div className="empty">No schedules are waiting for approval.</div> :
+      <div className="grid-cards">{requests.map((request) => <div className="card" key={request.requestId}>
+        {details(request, request.occurrences)}
         <div className="approval-actions">
-          <button className="btn ghost sm" onClick={() => setDetail(session)}>View details</button>
-          <button className="btn sm" onClick={() => approve(session)} disabled={busy}>Approve & Publish</button>
-          <button className="btn ghost sm" onClick={() => hold(session)} disabled={busy}>Put on Hold</button>
-          <button className="btn danger sm" onClick={() => setReview({ session, action: "reject", text: "" })}>Reject</button>
-          <button className="btn clay sm" onClick={() => setReview({ session, action: "changes", text: "" })}>Request changes</button>
+          <button className="btn ghost sm" onClick={() => openDetails(request)}>View Details</button>
+          {!request.recurring && <>
+            <button className="btn sm" onClick={() => approve(request)} disabled={busy}>Approve & Publish</button>
+            <button className="btn ghost sm" onClick={() => hold(request)} disabled={busy}>Put on Hold</button>
+            <button className="btn danger sm" onClick={() => setReview({ session: request, action: "reject", text: "" })}>Reject</button>
+            <button className="btn clay sm" onClick={() => setReview({ session: request, action: "changes", text: "" })}>Request changes</button>
+          </>}
         </div>
       </div>)}</div>}
 
-    <Modal open={!!detail} onClose={() => setDetail(null)} title="Schedule details"
-      footer={detail && <><button className="btn danger" onClick={() => setReview({ session: detail, action: "reject", text: "" })}>Reject</button>
-        <button className="btn clay" onClick={() => setReview({ session: detail, action: "changes", text: "" })}>Request changes</button>
-        <button className="btn ghost" onClick={() => hold(detail)} disabled={busy}>Put on Hold</button>
-        <button className="btn" onClick={() => approve(detail)} disabled={busy}>Approve & Publish</button></>}>
-      {detail && details(detail)}
+    <Modal open={!!detail} onClose={() => setDetail(null)}
+      title={detail?.request.recurring ? "Recurring Schedule Details" : "Schedule Details"}
+      footer={detail && (detail.request.recurring
+        ? <><button className="btn ghost" onClick={() => setDetail(null)}>Close</button>
+          <button className="btn" onClick={approveSelected}
+            disabled={busy || !detail.selectedIds.length}>Approve Selected</button></>
+        : <><button className="btn danger" onClick={() => setReview({ session: detail.request, action: "reject", text: "" })}>Reject</button>
+          <button className="btn clay" onClick={() => setReview({ session: detail.request, action: "changes", text: "" })}>Request changes</button>
+          <button className="btn ghost" onClick={() => hold(detail.request)} disabled={busy}>Put on Hold</button>
+          <button className="btn" onClick={() => approve(detail.request)} disabled={busy}>Approve & Publish</button></>)}>
+      {detail && (detail.request.recurring ? <div className="recurring-approval">
+        {details(detail.request, detail.request.occurrences)}
+        <div className="recurring-approval-head">
+          <strong>Select occurrences to approve</strong>
+          <span>{detail.selectedIds.length} of {detail.request.occurrences.length} selected</span>
+        </div>
+        <div className="recurring-occurrences">
+          {detail.request.occurrences.map((occurrence) => <label
+            className={"recurring-occurrence" + (detail.errors[occurrence.id] ? " has-conflict" : "")}
+            key={occurrence.id}>
+            <input type="checkbox" checked={detail.selectedIds.includes(occurrence.id)} disabled={busy}
+              onChange={() => setDetail((current) => ({
+                ...current,
+                selectedIds: current.selectedIds.includes(occurrence.id)
+                  ? current.selectedIds.filter((id) => id !== occurrence.id)
+                  : [...current.selectedIds, occurrence.id],
+                errors: { ...current.errors, [occurrence.id]: undefined },
+              }))} />
+            <span><strong>{new Date(occurrence.startAt).toLocaleDateString("en-PH", {
+              weekday: "long", month: "long", day: "numeric", year: "numeric",
+            })}</strong>
+              <small>{new Date(occurrence.startAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
+                {" – "}{new Date(occurrence.endAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}</small>
+              {detail.errors[occurrence.id] &&
+                <em>⚠ {detail.errors[occurrence.id]}</em>}</span>
+          </label>)}
+        </div>
+      </div> : details(detail.request))}
     </Modal>
 
     <Modal open={!!review} onClose={() => setReview(null)}
