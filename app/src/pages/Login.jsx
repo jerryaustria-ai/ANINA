@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GoogleLogin } from "@react-oauth/google";
 import { useAuth } from "../auth.jsx";
 import { toast } from "react-toastify";
@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 const allowDev = import.meta.env.VITE_ALLOW_DEV_LOGIN === "true";
+const facebookAppId = import.meta.env.VITE_FACEBOOK_APP_ID || "";
 
 const DEV_USERS = [
   ["Admin", "patrick.ong.wong@gmail.com"],
@@ -16,13 +17,13 @@ const DEV_USERS = [
 ];
 
 export default function Login({ mode = "login" }) {
-  const { loginWithGoogle, loginWithPassword, devLogin } = useAuth();
+  const { loginWithGoogle, loginWithPassword, registerWithPassword, loginWithFacebook, devLogin } = useAuth();
   const navigate = useNavigate();
   const registering = mode === "register";
   const requestedNext = new URLSearchParams(window.location.search).get("next");
   const next = requestedNext?.startsWith("/dashboard") ? requestedNext : "/dashboard";
   const nextQuery = requestedNext?.startsWith("/dashboard") ? `?next=${encodeURIComponent(requestedNext)}` : "";
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [busy, setBusy] = useState(false);
 
   function update(key, value) {
@@ -33,14 +34,40 @@ export default function Login({ mode = "login" }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const user = await loginWithPassword(form.email, form.password);
-      toast.success(`Welcome back, ${user.name}.`);
+      const user = registering
+        ? await registerWithPassword(form)
+        : await loginWithPassword(form.email, form.password);
+      toast.success(registering ? `Welcome to ANINA, ${user.name}.` : `Welcome back, ${user.name}.`);
       navigate(next, { replace: true });
     } catch (error) {
       toast.error(error.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  useEffect(() => {
+    if (!facebookAppId || window.FB) return;
+    window.fbAsyncInit = () => window.FB.init({
+      appId: facebookAppId, cookie: true, xfbml: false, version: "v22.0",
+    });
+    const script = document.createElement("script");
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => script.remove();
+  }, []);
+
+  function facebookLogin() {
+    if (!window.FB) return toast.error("Facebook login is still loading.");
+    window.FB.login((response) => {
+      if (!response.authResponse?.accessToken) return toast.error("Facebook sign-in was cancelled.");
+      setBusy(true);
+      loginWithFacebook(response.authResponse.accessToken)
+        .then((user) => { toast.success(`Welcome, ${user.name}.`); navigate(next, { replace: true }); })
+        .catch((error) => toast.error(error.message))
+        .finally(() => setBusy(false));
+    }, { scope: "public_profile,email" });
   }
 
   return (
@@ -52,17 +79,29 @@ export default function Login({ mode = "login" }) {
           ? "Register with Google, or ask the ANINA team to create your email account."
           : "Sign in to see your personal schedule."}</p>
 
-        {!registering && <form className="auth-form" onSubmit={submit}>
+        <form className="auth-form" onSubmit={submit}>
+          {registering && <div className="field">
+            <label htmlFor="auth-name">Full name</label>
+            <input id="auth-name" autoComplete="name" value={form.name}
+              onChange={(e) => update("name", e.target.value)} required />
+          </div>}
           <div className="field">
             <label htmlFor="auth-email">Email</label>
             <input id="auth-email" type="email" autoComplete="email" value={form.email} onChange={(e) => update("email", e.target.value)} required />
           </div>
+          {registering && <div className="field">
+            <label htmlFor="auth-phone">Phone number</label>
+            <input id="auth-phone" type="tel" autoComplete="tel" value={form.phone}
+              onChange={(e) => update("phone", e.target.value)} />
+          </div>}
           <div className="field">
             <label htmlFor="auth-password">Password</label>
             <input id="auth-password" type="password" autoComplete="current-password" value={form.password} onChange={(e) => update("password", e.target.value)} required />
           </div>
-          <button className="btn auth-submit" disabled={busy}>{busy ? "Please wait…" : "Sign in"}</button>
-        </form>}
+          <button className="btn auth-submit" disabled={busy}>
+            {busy ? "Please wait…" : registering ? "Create client account" : "Sign in"}
+          </button>
+        </form>
 
         <div className="auth-divider"><span>{registering ? "register with Google" : "or continue with Google"}</span></div>
 
@@ -80,6 +119,13 @@ export default function Login({ mode = "login" }) {
             Google sign-in is not configured yet. Email and password are available above.
           </div>
         )}
+
+        {facebookAppId && <>
+          <div className="auth-divider"><span>or continue with Facebook</span></div>
+          <button className="btn ghost auth-submit" type="button" onClick={facebookLogin} disabled={busy}>
+            Continue with Facebook
+          </button>
+        </>}
 
         {allowDev && (
           <div className="dev-login">

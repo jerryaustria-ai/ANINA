@@ -685,3 +685,33 @@ a { color:var(--sage-deep); }
   .overview-panel { border:0; padding:0; }
   .report-table-wrap { overflow:visible; }
 }
+
+.notification-view-all { width:100%; border:0; border-top:1px solid var(--line); padding:.75rem;
+  background:var(--paper); color:var(--olive); font-weight:700; cursor:pointer; }
+.notification-history { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--paper); }
+.notification-history-item { width:100%; border:0; border-bottom:1px solid var(--line); background:transparent;
+  padding:1rem; display:grid; grid-template-columns:auto 1fr auto; align-items:start; gap:.75rem; text-align:left; color:var(--ink); }
+.notification-history-item.unread { background:#f3f5ed; }
+.notification-history-item>span:nth-child(2) { display:grid; gap:.25rem; }
+.notification-history-item strong { font-size:.85rem; }
+.notification-history-item span span,.notification-history-item time { color:var(--ink-soft); font-size:.72rem; }
+.notification-history-item em { font-size:.68rem; color:var(--ink-soft); }
+.profile-form { width:min(640px,100%); }
+.profile-form>.picture-picker { margin-bottom:1.2rem; }
+.field small { display:block; margin-top:.25rem; color:var(--ink-soft); font-size:.68rem; }
+.schedule-list { display:grid; }
+.schedule-list-item { display:grid; grid-template-columns:6px minmax(220px,1.3fr) minmax(180px,1fr) auto;
+  gap:1rem; align-items:center; border:0; border-bottom:1px solid var(--line); background:var(--paper);
+  color:var(--ink); padding:.9rem 1rem; text-align:left; cursor:pointer; }
+.schedule-list-item:hover { background:#f7f4ef; }
+.schedule-list-item.is-dim { opacity:.55; }
+.schedule-list-color { align-self:stretch; border-radius:5px; }
+.schedule-list-item span:nth-child(2) { display:grid; gap:.2rem; }
+.schedule-list-item small { color:var(--ink-soft); }
+.schedule-list-item em { font-style:normal; color:var(--olive); font-size:.72rem; }
+.record-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+
+@media (max-width:700px) {
+  .schedule-list-item { grid-template-columns:5px 1fr; gap:.5rem; }
+  .schedule-list-item>span:nth-child(3),.schedule-list-item>em { grid-column:2; }
+}

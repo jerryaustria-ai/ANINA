@@ -10,6 +10,8 @@ import { GuestPurchase } from "../models/GuestPurchase.js";
 import { User } from "../models/User.js";
 import { Booking } from "../models/Booking.js";
 import { hasPriorClientActivity } from "../services/firstTimer.js";
+import { createNotification } from "../services/notifications.js";
+import { createAuditLog } from "../services/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -52,6 +54,7 @@ function oneTimePurchaseRecord(purchase) {
   const included = membership?.sessionsIncluded ??
     (purchase.planSnapshot?.unlimitedClasses ? null : (purchase.planSnapshot?.sessionCount || 1));
   const remaining = membership?.sessionsRemaining ?? included;
+  const reserved = membership?.sessionsReserved || 0;
   const expirationDate = purchaseValidityEnd(purchase);
   const startDate = purchase.paidAt || membership?.createdAt || purchase.createdAt;
   const paymentStatus = purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending";
@@ -108,7 +111,8 @@ function oneTimePurchaseRecord(purchase) {
     paymentDate: purchase.paidAt,
     bookingDate: purchase.createdAt,
     includedSessions: included,
-    usedSessions: included == null || remaining == null ? null : Math.max(0, included - remaining),
+    usedSessions: included == null || remaining == null ? null : Math.max(0, included - remaining - reserved),
+    reservedSessions: reserved,
     remainingSessions: remaining,
     unlimitedClasses: !!membership?.unlimitedClasses,
     startDate,
@@ -258,6 +262,47 @@ router.post(
     if (cancelled.planId) m.xenditPlanId = cancelled.planId;
     await applyEvent(m, "cancelled");
     res.json({ membership: m.toPublic() });
+  })
+);
+
+router.post(
+  "/:id/extend-validity",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const membership = await Membership.findById(req.params.id).populate("tier client");
+    if (!membership) throw new HttpError(404, "Membership or plan not found");
+    const expirationDate = new Date(req.body?.expirationDate);
+    const reason = String(req.body?.reason || "").trim();
+    if (Number.isNaN(expirationDate.getTime()) || expirationDate <= new Date()) {
+      throw new HttpError(400, "Choose a future expiration date.");
+    }
+    if (!reason) throw new HttpError(400, "An extension reason is required.");
+    if (membership.currentPeriodEnd && expirationDate <= membership.currentPeriodEnd) {
+      throw new HttpError(400, "The new expiration date must be later than the current expiration date.");
+    }
+    const previous = membership.toObject({ depopulate: true });
+    membership.currentPeriodEnd = expirationDate;
+    membership.validityExtensionReason = reason;
+    membership.extendedBy = req.user._id;
+    membership.extendedAt = new Date();
+    if (membership.status === "inactive") membership.status = "active";
+    await membership.save();
+    await createAuditLog({
+      actor: req.user, action: "PLAN_VALIDITY_EXTENDED",
+      description: `Extended ${membership.tier?.name || "a plan"} for ${membership.client?.name || "a client"} until ${expirationDate.toISOString()}.`,
+      entityType: "membership", entityId: membership._id,
+      entityLabel: membership.referenceId || membership.tier?.name || "Membership",
+      previousValue: previous, updatedValue: membership,
+    });
+    await createNotification({
+      recipient: membership.client,
+      type: "PLAN_VALIDITY_EXTENDED",
+      title: "Plan Validity Extended",
+      message: `Your ${membership.tier?.name || "plan"} is now valid until ${expirationDate.toLocaleDateString("en-PH", { timeZone: process.env.APP_TIMEZONE || "Asia/Manila" })}.`,
+      relatedUserId: membership.client?._id,
+      eventKey: `plan-extension:${membership._id}:${membership.extendedAt.getTime()}`,
+    });
+    res.json({ membership: membership.toPublic() });
   })
 );
 

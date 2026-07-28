@@ -8,12 +8,17 @@ import { useScheduleRefresh } from "../useScheduleRefresh.js";
 import { fmtRange, toLocalInput, dateAtHour, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
-const blankForm = { title: "", type: "group", room: "", startAt: "", endAt: "", capacity: 8, minToRun: 3 };
+const blankForm = {
+  classDefinition: "", title: "", type: "group", room: "", startAt: "", endAt: "",
+  capacity: 8, minToRun: 3, recurring: false, recurrenceFrequency: "weekly",
+  weekdays: [], until: "",
+};
 
 export default function InstructorDashboard() {
   const cal = useCalendar();
   const [sessions, setSessions] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [classDefinitions, setClassDefinitions] = useState([]);
   const [busy, setBusy] = useState(false);
   const [serverOffset, setServerOffset] = useState(0);
   const [, setClockTick] = useState(0);
@@ -29,7 +34,13 @@ export default function InstructorDashboard() {
   }
   useEffect(() => { load().catch((e) => toast.error(e.message)); }, [cal.range.from.getTime(), cal.range.to.getTime()]);
   useScheduleRefresh(load);
-  useEffect(() => { api("/rooms").then(({ rooms }) => setRooms(rooms)).catch(() => {}); }, []);
+  useEffect(() => {
+    Promise.all([api("/rooms"), api("/class-definitions")])
+      .then(([roomData, classData]) => {
+        setRooms(roomData.rooms);
+        setClassDefinitions(classData.classes);
+      }).catch(() => {});
+  }, []);
   useEffect(() => {
     const timer = window.setInterval(() => setClockTick((value) => value + 1), 30000);
     return () => window.clearInterval(timer);
@@ -60,13 +71,24 @@ export default function InstructorDashboard() {
   function openCreate(slot) {
     const start = slot ? dateAtHour(slot.dateISO, slot.startHour) : new Date();
     const end = slot ? dateAtHour(slot.dateISO, slot.endHour) : new Date(Date.now() + 3600e3);
-    setForm({ ...blankForm, room: rooms[0]?.id || "", startAt: toLocalInput(start), endAt: toLocalInput(end) });
+    const definition = classDefinitions[0];
+    setForm({
+      ...blankForm,
+      classDefinition: definition?.id || "",
+      title: definition?.title || "",
+      type: definition?.type || "group",
+      room: definition?.defaultRoom?.id || rooms[0]?.id || "",
+      capacity: definition?.type === "private" ? 1 : definition?.defaultCapacity || 8,
+      minToRun: definition?.type === "private" ? 1 : definition?.defaultMinToRun || 1,
+      startAt: toLocalInput(start), endAt: toLocalInput(end),
+    });
   }
 
   function openEdit(session) {
     setManage(null);
     setForm({
       id: session.id,
+      classDefinition: session.classDefinition?.id || session.classDefinition || "",
       title: session.title,
       type: session.type,
       room: session.room?.id || "",
@@ -85,13 +107,27 @@ export default function InstructorDashboard() {
         throw new Error("Schedules cannot be created for past dates. Please select today or a future date.");
       }
       const body = {
-        title: form.title, type: form.type, room: form.room,
+        title: form.title, classDefinition: form.classDefinition || null,
+        type: form.type, room: form.room,
         startAt: new Date(form.startAt).toISOString(), endAt: new Date(form.endAt).toISOString(),
         capacity: Number(form.capacity), minToRun: Number(form.minToRun),
       };
-      if (form.id) await api(`/sessions/${form.id}`, { method: "PATCH", body });
-      else await api("/sessions", { method: "POST", body });
-      toast.success("Schedule submitted successfully and is waiting for Admin approval.");
+      if (form.id) {
+        await api(`/sessions/${form.id}`, { method: "PATCH", body });
+        toast.success("Schedule resubmitted and is waiting for Admin approval.");
+      } else if (form.recurring) {
+        const result = await api("/sessions/recurring", {
+          method: "POST",
+          body: {
+            ...body, frequency: form.recurrenceFrequency,
+            weekdays: form.weekdays, until: form.until,
+          },
+        });
+        toast.success(`${result.count} schedules submitted and are waiting for Admin approval.`);
+      } else {
+        await api("/sessions", { method: "POST", body });
+        toast.success("Schedule submitted successfully and is waiting for Admin approval.");
+      }
       setForm(null); await load();
     } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
@@ -127,7 +163,18 @@ export default function InstructorDashboard() {
   }
   async function sessionAction(action) {
     setBusy(true);
-    try { await api(`/sessions/${manage.session.id}/${action}`, { method: "POST" }); await refreshManage(); toast.success(`Class ${action === "cancel" ? "cancelled" : "confirmed"}.`); }
+    try {
+      const reason = action === "cancel"
+        ? window.prompt("Why are you requesting cancellation of this class?") : "";
+      if (action === "cancel" && reason === null) return;
+      const result = await api(`/sessions/${manage.session.id}/${action}`, {
+        method: "POST", body: action === "cancel" ? { reason } : {},
+      });
+      await refreshManage();
+      toast.success(action === "cancel"
+        ? result.message || "Cancellation request sent to Admin."
+        : "Class confirmed.");
+    }
     catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
@@ -181,8 +228,19 @@ export default function InstructorDashboard() {
       >
         {form && (
           <div>
-            <div className="field"><label>Title</label>
-              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Postpartum Recovery Flow" /></div>
+            <div className="field"><label>Official class title</label>
+              <select value={form.classDefinition || ""} onChange={(event) => {
+                const definition = classDefinitions.find((item) => item.id === event.target.value);
+                if (!definition) return;
+                setForm({
+                  ...form, classDefinition: definition.id, title: definition.title,
+                  type: definition.type,
+                  room: definition.defaultRoom?.id || form.room,
+                  capacity: definition.type === "private" ? 1 : definition.defaultCapacity,
+                  minToRun: definition.type === "private" ? 1 : definition.defaultMinToRun,
+                });
+              }}><option value="">Select a class</option>{classDefinitions.map((item) =>
+                <option value={item.id} key={item.id}>{item.title}</option>)}</select></div>
             <div className="field row">
               <div><label>Type</label>
                 <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
@@ -203,6 +261,27 @@ export default function InstructorDashboard() {
                 <div><label>Min to run</label><input type="number" min="1" value={form.minToRun} onChange={(e) => setForm({ ...form, minToRun: e.target.value })} /></div>
               </div>
             )}
+            {!form.id && <div className="field recurring-fields">
+              <label className="check-line"><input type="checkbox" checked={form.recurring}
+                onChange={(event) => setForm({ ...form, recurring: event.target.checked })} />
+                Create a recurring schedule</label>
+              {form.recurring && <>
+                <label>Frequency<select value={form.recurrenceFrequency}
+                  onChange={(event) => setForm({ ...form, recurrenceFrequency: event.target.value })}>
+                  <option value="daily">Daily</option><option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select></label>
+                {form.recurrenceFrequency === "weekly" && <div className="weekday-picker">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) =>
+                    <label key={day}><input type="checkbox" checked={form.weekdays.includes(index)}
+                      onChange={() => setForm({ ...form, weekdays: form.weekdays.includes(index)
+                        ? form.weekdays.filter((value) => value !== index)
+                        : [...form.weekdays, index] })} />{day}</label>)}
+                </div>}
+                <label>Repeat until<input type="date" min={form.startAt.slice(0, 10)} value={form.until}
+                  onChange={(event) => setForm({ ...form, until: event.target.value })} /></label>
+              </>}
+            </div>}
           </div>
         )}
       </Modal>
@@ -213,7 +292,8 @@ export default function InstructorDashboard() {
         onClose={() => setManage(null)}
         title={s?.title}
         footer={s && <>
-          {!classEnded && s.status !== "cancelled" && <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Cancel class</button>}
+          {!classEnded && !["cancelled", "cancellation_requested"].includes(s.status) &&
+            <button className="btn danger" onClick={() => sessionAction("cancel")} disabled={busy}>Request cancellation</button>}
           {!classEnded && ["rejected", "changes_requested", "published"].includes(s.status) &&
             <button className="btn" onClick={() => openEdit(s)} disabled={busy}>Edit schedule</button>}
         </>}
@@ -224,6 +304,8 @@ export default function InstructorDashboard() {
             <p className="meta-line">🗓 {new Date(s.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })} · {new Date(s.startAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} – {new Date(s.endAt).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })} · 📍 {s.room?.name}</p>
             {s.rejectionReason && <div className="status-notice warning"><strong>Rejected:</strong> {s.rejectionReason}</div>}
             {s.changeRequestNotes && <div className="status-notice warning"><strong>Changes requested:</strong> {s.changeRequestNotes}</div>}
+            {s.status === "on_hold" && <div className="status-notice warning"><strong>Admin review on hold.</strong><br />The schedule remains unpublished until the Admin resumes its review.</div>}
+            {s.status === "cancellation_requested" && <div className="status-notice warning"><strong>Cancellation requested.</strong><br />An Admin will review and finalize the request.</div>}
             <div className="meta-line headcount">
               👥 {s.acceptedCount}/{s.minToRun} min ·
               <span className={"meter" + (metMin ? " met" : "")}><span style={{ width: `${Math.min(100, (s.acceptedCount / s.capacity) * 100)}%` }} /></span>

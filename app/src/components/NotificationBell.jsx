@@ -4,7 +4,11 @@ import { toast } from "react-toastify";
 import { api } from "../api.js";
 
 const ERROR_TYPES = new Set(["BOOKING_DECLINED", "BOOKING_CANCELLED", "SCHEDULE_CANCELLED"]);
-const WARNING_TYPES = new Set(["SCHEDULE_UPDATED", "SCHEDULE_RESCHEDULED", "INSTRUCTOR_CHANGED", "CLIENT_REMOVED_FROM_SCHEDULE"]);
+const WARNING_TYPES = new Set([
+  "SCHEDULE_UPDATED", "SCHEDULE_RESCHEDULED", "INSTRUCTOR_CHANGED",
+  "CLIENT_REMOVED_FROM_SCHEDULE", "SCHEDULE_CONFLICT", "SCHEDULE_ON_HOLD",
+  "SCHEDULE_CANCELLATION_REQUESTED",
+]);
 const SUCCESS_TYPES = new Set(["BOOKING_APPROVED", "BOOKING_CONFIRMED", "CLIENT_ADDED_TO_SCHEDULE"]);
 
 function showArrival(notification) {
@@ -21,7 +25,11 @@ function notificationPath(notification, role) {
   if (role === "admin" && notification.relatedUserId && !notification.relatedScheduleId) {
     return `/dashboard/people?user=${notification.relatedUserId}`;
   }
-  if (notification.relatedScheduleId) return `/dashboard?schedule=${notification.relatedScheduleId}`;
+  if (notification.relatedScheduleId) {
+    return role === "admin"
+      ? `/dashboard/schedule?schedule=${notification.relatedScheduleId}`
+      : `/dashboard?schedule=${notification.relatedScheduleId}`;
+  }
   return "/dashboard";
 }
 
@@ -36,7 +44,7 @@ export default function NotificationBell({ user }) {
 
   async function load({ announce = true } = {}) {
     const [{ notifications: list }, { count }] = await Promise.all([
-      api("/notifications?limit=75"),
+      api("/notifications?limit=10"),
       api("/notifications/unread-count"),
     ]);
     if (initialized.current && announce) {
@@ -119,6 +127,9 @@ export default function NotificationBell({ user }) {
           }}>Mark read</span>}
         </button>)}
       </div>
+      <button className="notification-view-all" onClick={() => { setOpen(false); navigate("/dashboard/notifications"); }}>
+        View All Notifications
+      </button>
     </div>}
   </div>;
 }

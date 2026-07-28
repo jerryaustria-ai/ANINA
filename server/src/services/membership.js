@@ -72,3 +72,122 @@ export async function hasActiveMembership(clientId) {
   const m = await Membership.findOne({ client: clientId, status: "active" });
   return !!(m && m.isActiveNow());
 }
+
+export function membershipAllowsClass(membership, classTitle) {
+  const tags = membership.validClassTags || [];
+  if (!tags.length) return true;
+  const title = String(classTitle || "").trim().toLowerCase();
+  return tags.some((tag) => {
+    const normalized = String(tag || "").trim().toLowerCase();
+    return normalized === title || title.includes(normalized) || normalized.includes(title);
+  });
+}
+
+export async function findEligibleMembership(clientId, classTitle) {
+  const memberships = await Membership.find({
+    client: clientId,
+    status: "active",
+    $or: [
+      { currentPeriodEnd: null },
+      { currentPeriodEnd: { $exists: false } },
+      { currentPeriodEnd: { $gt: new Date() } },
+    ],
+  }).sort("currentPeriodEnd createdAt");
+  return memberships.find((membership) =>
+    membership.isActiveNow() &&
+    membershipAllowsClass(membership, classTitle) &&
+    (membership.unlimitedClasses || membership.sessionsRemaining == null || membership.sessionsRemaining > 0)
+  ) || null;
+}
+
+export async function reserveMembershipCredit(membershipId) {
+  const membership = await Membership.findOneAndUpdate(
+    {
+      _id: membershipId,
+      status: "active",
+      $or: [
+        { unlimitedClasses: true },
+        { sessionsRemaining: null },
+        { sessionsRemaining: { $gt: 0 } },
+      ],
+    },
+    [
+      {
+        $set: {
+          sessionsRemaining: {
+            $cond: [
+              { $or: ["$unlimitedClasses", { $eq: ["$sessionsRemaining", null] }] },
+              "$sessionsRemaining",
+              { $subtract: ["$sessionsRemaining", 1] },
+            ],
+          },
+          sessionsReserved: {
+            $cond: [
+              { $or: ["$unlimitedClasses", { $eq: ["$sessionsRemaining", null] }] },
+              "$sessionsReserved",
+              { $add: [{ $ifNull: ["$sessionsReserved", 0] }, 1] },
+            ],
+          },
+        },
+      },
+    ],
+    { new: true }
+  );
+  return membership;
+}
+
+export async function returnMembershipCredit(membershipId) {
+  if (!membershipId) return null;
+  return Membership.findOneAndUpdate(
+    {
+      _id: membershipId,
+      $or: [
+        { unlimitedClasses: true },
+        { sessionsRemaining: null },
+        { sessionsReserved: { $gt: 0 } },
+      ],
+    },
+    [
+      {
+        $set: {
+          sessionsRemaining: {
+            $cond: [
+              { $or: ["$unlimitedClasses", { $eq: ["$sessionsRemaining", null] }] },
+              "$sessionsRemaining",
+              { $add: ["$sessionsRemaining", 1] },
+            ],
+          },
+          sessionsReserved: {
+            $cond: [
+              { $or: ["$unlimitedClasses", { $eq: ["$sessionsRemaining", null] }] },
+              "$sessionsReserved",
+              { $max: [0, { $subtract: [{ $ifNull: ["$sessionsReserved", 0] }, 1] }] },
+            ],
+          },
+        },
+      },
+    ],
+    { new: true }
+  );
+}
+
+export async function consumeReservedCredit(membershipId) {
+  if (!membershipId) return null;
+  return Membership.findOneAndUpdate(
+    { _id: membershipId },
+    [
+      {
+        $set: {
+          sessionsReserved: {
+            $cond: [
+              { $or: ["$unlimitedClasses", { $eq: ["$sessionsRemaining", null] }] },
+              "$sessionsReserved",
+              { $max: [0, { $subtract: [{ $ifNull: ["$sessionsReserved", 0] }, 1] }] },
+            ],
+          },
+        },
+      },
+    ],
+    { new: true }
+  );
+}

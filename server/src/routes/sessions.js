@@ -16,11 +16,19 @@ import { createAuditLog } from "../services/audit.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 import { randomUUID } from "node:crypto";
+import { ClassDefinition } from "../models/ClassDefinition.js";
+import {
+  findEligibleMembership,
+  reserveMembershipCredit,
+  returnMembershipCredit,
+} from "../services/membership.js";
 
 const router = Router();
 
 const populate = (q) =>
-  q.populate("instructor", "name email picture role").populate("room", "name color maxCapacity location");
+  q.populate("instructor", "name email picture role active")
+    .populate("room", "name color maxCapacity location active")
+    .populate("classDefinition", "title description type defaultCapacity defaultMinToRun active");
 
 const ACTIVE_CLIENT_STATUSES = ["pending", "accepted", "approved", "confirmed", "booked", "waitlisted", "active"];
 
@@ -188,16 +196,18 @@ router.get(
         ...publishedFilter,
         startAt: { $gte: from, $lt: to },
       })
-        .populate("instructor", "name")
-        .populate("room", "name location")
+        .populate("instructor", "name active")
+        .populate("room", "name location active")
         .sort("startAt"),
       req.query.includeNearest === "1"
         ? ClassSession.findOne({ ...publishedFilter, startAt: { $gte: new Date() } }).sort("startAt").select("startAt")
         : null,
     ]);
+    const available = sessions.filter((session) =>
+      session.instructor?.active !== false && session.room?.active !== false);
     res.json({
       nearestStartAt: nearest?.startAt || null,
-      sessions: sessions.map((session) => ({
+      sessions: available.map((session) => ({
         id: session._id,
         title: session.title,
         type: session.type,
@@ -239,10 +249,14 @@ router.get(
     if (req.user.role === "client") {
       filter.status = "published";
       filter.isPublished = true;
+      filter.startAt = { ...(filter.startAt || {}), $gt: new Date() };
     }
 
     const sessions = await populate(ClassSession.find(filter).sort("startAt"));
-    res.json({ sessions: sessions.map((s) => s.toPublic()) });
+    const visible = req.user.role === "client"
+      ? sessions.filter((session) => session.instructor?.active !== false && session.room?.active !== false)
+      : sessions;
+    res.json({ sessions: visible.map((s) => s.toPublic()) });
   })
 );
 
@@ -251,13 +265,18 @@ router.post(
   "/",
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
-    const { title, type = "group", room, startAt, endAt, capacity, minToRun = 1, notes, color } = req.body || {};
+    const { title, type = "group", room, startAt, endAt, capacity, minToRun = 1, notes, color, classDefinition } = req.body || {};
     const instructorId = req.body.instructor && req.user.role === "admin" ? req.body.instructor : req.user._id;
 
     if (!title || !room || !startAt || !endAt || !capacity) {
       throw new HttpError(400, "title, room, startAt, endAt and capacity are required");
     }
     if (!SESSION_TYPES.includes(type)) throw new HttpError(400, "Invalid session type");
+    if (classDefinition) {
+      const official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
+      if (!official) throw new HttpError(400, "The selected official class title is unavailable.");
+      if (official.title !== title) throw new HttpError(400, "Class title does not match the selected official class.");
+    }
     const cap = type === "private" ? 1 : Number(capacity);
     const min = type === "private" ? 1 : Number(minToRun);
     if (min > cap) throw new HttpError(400, "minToRun cannot exceed capacity");
@@ -267,7 +286,7 @@ router.post(
     const instructorSubmission = req.user.role === "instructor";
     const now = new Date();
     const session = await ClassSession.create({
-      title, type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
       startAt, endAt, capacity: cap, minToRun: min,
       notes, color,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -317,6 +336,39 @@ async function reviewSchedule(req, status, details = {}) {
   if (!session) throw new HttpError(404, "Session not found");
   if (session.status !== "pending_approval") {
     throw new HttpError(409, "This schedule is not awaiting Admin review.");
+  }
+  if (status === "published") {
+    try {
+      await validateSlot({
+        roomId: session.room,
+        startAt: session.startAt,
+        endAt: session.endAt,
+        capacity: session.capacity,
+        excludeId: session._id,
+        instructorId: session.instructor,
+      });
+    } catch (error) {
+      if (error.status === 409) {
+        const instructor = await User.findById(session.instructor);
+        const eventKey = `schedule-conflict:${session._id}:${Date.now()}`;
+        await createNotification({
+          recipient: instructor,
+          type: "SCHEDULE_CONFLICT",
+          title: "Schedule Conflict",
+          message: `${session.title} cannot be approved yet: ${error.message}`,
+          relatedScheduleId: session._id,
+          eventKey,
+        });
+        await notifyAdmins({
+          type: "SCHEDULE_CONFLICT",
+          title: "Schedule Conflict",
+          message: `${session.title}: ${error.message}`,
+          relatedScheduleId: session._id,
+          eventKey,
+        }, req.user._id);
+      }
+      throw error;
+    }
   }
   const previous = session.toObject({ depopulate: true });
   const instructor = await User.findById(session.instructor);
@@ -381,6 +433,55 @@ router.post(
 );
 
 router.post(
+  "/:id/hold",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const session = await ClassSession.findById(req.params.id);
+    if (!session) throw new HttpError(404, "Session not found");
+    if (!["pending_approval", "on_hold"].includes(session.status)) {
+      throw new HttpError(409, "Only a pending or held schedule can be placed on hold.");
+    }
+    const previous = session.toObject({ depopulate: true });
+    session.status = "on_hold";
+    session.isPublished = false;
+    session.reviewedBy = req.user._id;
+    session.reviewedAt = new Date();
+    session.changeRequestNotes = String(req.body?.reason || "").trim();
+    await session.save();
+    const instructor = await User.findById(session.instructor);
+    await createNotification({
+      recipient: instructor,
+      type: "SCHEDULE_ON_HOLD",
+      title: "Schedule On Hold",
+      message: `${session.title} was placed on hold${session.changeRequestNotes ? `: ${session.changeRequestNotes}` : "."}`,
+      relatedScheduleId: session._id,
+      eventKey: `schedule-hold:${session._id}:${session.reviewedAt.getTime()}`,
+    });
+    await createAuditLog({
+      actor: req.user, action: "SCHEDULE_ON_HOLD",
+      description: `Placed ${session.title} on hold.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: previous, updatedValue: session,
+    });
+    res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
+  })
+);
+
+router.post(
+  "/:id/review-held",
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const session = await ClassSession.findById(req.params.id);
+    if (!session) throw new HttpError(404, "Session not found");
+    if (session.status !== "on_hold") throw new HttpError(409, "This schedule is not on hold.");
+    session.status = "pending_approval";
+    session.changeRequestNotes = "";
+    await session.save();
+    res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
+  })
+);
+
+router.post(
   "/:id/resubmit",
   requireRole("instructor"),
   asyncHandler(async (req, res) => {
@@ -419,17 +520,28 @@ router.post(
     const {
       title, type = "group", room, startAt, endAt, capacity, minToRun = 1,
       notes = "", color = "", weekdays = [], until, instructor: requestedInstructor,
+      frequency = "weekly", classDefinition,
     } = req.body || {};
     const instructorId = req.user.role === "admin" && requestedInstructor
       ? requestedInstructor : req.user._id;
     if (!title || !room || !startAt || !endAt || !capacity || !until) {
       throw new HttpError(400, "Recurring schedules require title, room, start, end, capacity, and end date.");
     }
-    const selectedDays = [...new Set(weekdays.map(Number))];
-    if (!selectedDays.length || selectedDays.some((day) => day < 0 || day > 6)) {
+    if (!["daily", "weekly", "monthly"].includes(frequency)) {
+      throw new HttpError(400, "Recurrence must be daily, weekly, or monthly.");
+    }
+    const selectedDays = [...new Set((Array.isArray(weekdays) ? weekdays : []).map(Number))];
+    if (frequency === "weekly" &&
+        (!selectedDays.length || selectedDays.some((day) => day < 0 || day > 6))) {
       throw new HttpError(400, "Select at least one valid weekday.");
     }
     if (!SESSION_TYPES.includes(type)) throw new HttpError(400, "Invalid session type");
+    if (classDefinition) {
+      const official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
+      if (!official || official.title !== title) {
+        throw new HttpError(400, "The selected official class title is unavailable.");
+      }
+    }
     const firstStart = new Date(startAt);
     const firstEnd = new Date(endAt);
     const lastDate = new Date(until);
@@ -450,7 +562,10 @@ router.post(
     const cursor = new Date(firstStart);
     cursor.setHours(firstStart.getHours(), firstStart.getMinutes(), 0, 0);
     while (cursor <= lastDate) {
-      if (cursor >= firstStart && selectedDays.includes(cursor.getDay())) {
+      const matches = frequency === "daily" ||
+        (frequency === "weekly" && selectedDays.includes(cursor.getDay())) ||
+        (frequency === "monthly" && cursor.getDate() === firstStart.getDate());
+      if (cursor >= firstStart && matches) {
         occurrences.push({ start: new Date(cursor), end: new Date(cursor.getTime() + duration) });
       }
       cursor.setDate(cursor.getDate() + 1);
@@ -468,7 +583,7 @@ router.post(
     const now = new Date();
     const recurrenceGroupId = randomUUID();
     const created = await ClassSession.insertMany(occurrences.map((occurrence) => ({
-      title, type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
       startAt: occurrence.start, endAt: occurrence.end,
       capacity: cap, minToRun: min, notes, color, recurrenceGroupId,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -568,6 +683,12 @@ router.patch(
     const timeChanged = (b.startAt !== undefined && new Date(b.startAt).getTime() !== session.startAt.getTime()) ||
       (b.endAt !== undefined && new Date(b.endAt).getTime() !== session.endAt.getTime());
     const instructorId = req.user.role === "admin" && b.instructor ? b.instructor : session.instructor;
+    if (b.classDefinition !== undefined && b.classDefinition) {
+      const official = await ClassDefinition.findOne({ _id: b.classDefinition, active: true });
+      if (!official || (b.title !== undefined && official.title !== b.title)) {
+        throw new HttpError(400, "The selected official class title is unavailable.");
+      }
+    }
     const next = {
       roomId: b.room ?? session.room,
       startAt: b.startAt ?? session.startAt,
@@ -619,6 +740,7 @@ router.patch(
       if (b[k] !== undefined) session[k] = b[k];
     });
     if (b.room !== undefined) session.room = b.room;
+    if (b.classDefinition !== undefined) session.classDefinition = b.classDefinition || null;
     if (req.user.role === "admin" && b.instructor !== undefined) session.instructor = instructorId;
     if (req.user.role === "instructor") {
       session.status = "pending_approval";
@@ -632,6 +754,9 @@ router.patch(
       session.changeRequestNotes = "";
     } else if (b.status === "completed") {
       session.status = "completed";
+      session.isPublished = false;
+    } else if (["pending_approval", "on_hold", "rejected", "changes_requested"].includes(b.status)) {
+      session.status = b.status;
       session.isPublished = false;
     } else if (!["cancelled", "completed"].includes(session.status)) {
       session.status = "published";
@@ -788,7 +913,8 @@ router.delete(
   })
 );
 
-// POST /api/sessions/:id/cancel — cancel the class; open bookings are cancelled too.
+// POST /api/sessions/:id/cancel — Instructors submit a request; Admin performs
+// the final cancellation after reviewing affected clients.
 router.post(
   "/:id/cancel",
   requireRole("instructor", "admin"),
@@ -804,6 +930,37 @@ router.post(
       session: session._id,
       status: { $in: ["pending", "accepted", "waitlisted"] },
     }).populate("client");
+    if (req.user.role === "instructor") {
+      session.status = "cancellation_requested";
+      session.isPublished = false;
+      session.cancellationRequestedBy = req.user._id;
+      session.cancellationRequestedAt = new Date();
+      session.cancellationRequestReason = String(req.body?.reason || "").trim();
+      await session.save();
+      await notifyAdmins({
+        type: "SCHEDULE_CANCELLATION_REQUESTED",
+        title: "Class Cancellation Requested",
+        message: `${req.user.name} requested cancellation of ${session.title}. ${affectedBookings.length} active booking${affectedBookings.length === 1 ? "" : "s"} require review.`,
+        relatedUserId: req.user._id,
+        relatedScheduleId: session._id,
+        eventKey: `schedule-cancellation-request:${session._id}:${session.cancellationRequestedAt.getTime()}`,
+      });
+      await createAuditLog({
+        actor: req.user, action: "SCHEDULE_CANCELLATION_REQUESTED",
+        description: `Requested cancellation of ${session.title}.`,
+        entityType: "schedule", entityId: session._id, entityLabel: session.title,
+        previousValue: previous, updatedValue: session,
+        metadata: { affectedBookingCount: affectedBookings.length },
+      });
+      return res.json({
+        requested: true,
+        affectedBookingCount: affectedBookings.length,
+        message: affectedBookings.length
+          ? "Cancellation request sent to Admin. Affected clients must be notified before cancellation."
+          : "Cancellation request sent to Admin.",
+        session: (await populate(ClassSession.findById(session._id))).toPublic(),
+      });
+    }
     const affectedClients = affectedBookings.map((booking) => booking.client).filter(Boolean);
     session.status = "cancelled";
     session.cancelledBy = req.user._id;
@@ -815,6 +972,14 @@ router.post(
       { session: session._id, status: { $in: ["pending", "accepted", "waitlisted"] } },
       { $set: { status: "cancelled" } }
     );
+    for (const booking of affectedBookings) {
+      if (booking.creditStatus === "reserved") {
+        await returnMembershipCredit(booking.membership);
+        booking.creditStatus = "returned";
+        booking.status = "cancelled";
+        await booking.save();
+      }
+    }
     await emailGuestBookingCancellations(
       affectedBookings,
       session.cancelledAt,
@@ -902,23 +1067,58 @@ router.put(
     const addedIds = clientIds.filter((id) => !previouslyActive.has(id));
     const removedIds = [...previouslyActive].filter((id) => !desired.has(id));
     const operations = [];
+    const membershipByClient = new Map();
+    const reservedMembershipIds = [];
+    for (const clientId of addedIds) {
+      const membership = await findEligibleMembership(clientId, session.title);
+      const client = clients.find((item) => item._id.toString() === clientId);
+      if (!membership) {
+        throw new HttpError(402, `${client?.name || "A selected client"} does not have an active eligible plan credit.`);
+      }
+      membershipByClient.set(clientId, membership._id);
+    }
+    for (const clientId of addedIds) {
+      const membershipId = membershipByClient.get(clientId);
+      const client = clients.find((item) => item._id.toString() === clientId);
+      const reserved = await reserveMembershipCredit(membershipId);
+      if (!reserved) {
+        for (const membershipId of reservedMembershipIds) await returnMembershipCredit(membershipId);
+        throw new HttpError(409, `${client?.name || "A selected client"} no longer has an available plan credit.`);
+      }
+      reservedMembershipIds.push(membershipId);
+    }
 
     for (const booking of existing) {
       if (!desired.has(booking.client.toString()) && ["pending", "accepted", "waitlisted"].includes(booking.status)) {
-        operations.push({ updateOne: { filter: { _id: booking._id }, update: { $set: { status: "cancelled" } } } });
+        operations.push({ updateOne: { filter: { _id: booking._id }, update: {
+          $set: { status: "cancelled", creditStatus: booking.creditStatus === "reserved" ? "returned" : booking.creditStatus },
+        } } });
       }
     }
     for (const clientId of clientIds) {
       const booking = existingByClient.get(clientId);
       if (booking) {
         if (booking.status !== "accepted") {
-          operations.push({ updateOne: { filter: { _id: booking._id }, update: { $set: { status: "accepted" } } } });
+          operations.push({ updateOne: { filter: { _id: booking._id }, update: { $set: {
+            status: "accepted", membership: membershipByClient.get(clientId), creditStatus: "reserved",
+          } } } });
         }
       } else {
-        operations.push({ insertOne: { document: { session: session._id, client: clientId, status: "accepted", note: "Assigned by admin" } } });
+        operations.push({ insertOne: { document: {
+          session: session._id, client: clientId, status: "accepted", note: "Assigned by admin",
+          membership: membershipByClient.get(clientId), creditStatus: "reserved",
+        } } });
       }
     }
-    if (operations.length) await Booking.bulkWrite(operations, { ordered: true });
+    try {
+      if (operations.length) await Booking.bulkWrite(operations, { ordered: true });
+    } catch (error) {
+      for (const membershipId of reservedMembershipIds) await returnMembershipCredit(membershipId);
+      throw error;
+    }
+    for (const booking of existing.filter((item) => removedIds.includes(item.client.toString()))) {
+      if (booking.creditStatus === "reserved") await returnMembershipCredit(booking.membership);
+    }
     const removedGuestBookings = existing.filter((booking) =>
       removedIds.includes(booking.client.toString()) && booking.purchase);
     await emailGuestBookingCancellations(

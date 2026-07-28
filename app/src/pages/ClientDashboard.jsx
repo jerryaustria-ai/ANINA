@@ -148,7 +148,10 @@ export default function ClientDashboard() {
       )}
       {membership?.activeNow && membership.source === "guest_checkout" && (
         <div className="status-notice success">
-          {membership.tier?.name} is active
+          <strong>{membership.tier?.name} is active.</strong>{" "}
+          {membership.unlimitedClasses
+            ? "Unlimited eligible classes."
+            : `${membership.sessionsRemaining ?? 0} available credit${membership.sessionsRemaining === 1 ? "" : "s"} · ${membership.sessionsReserved || 0} reserved.`}
         </div>
       )}
 

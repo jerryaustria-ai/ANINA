@@ -17,13 +17,13 @@ export function useCalendar(initialView = "week") {
 
   // The [from, to) window to fetch sessions for the visible view.
   const range = useMemo(() => {
-    if (view === "week") return { from: weekStart, to: addDays(weekStart, 7) };
+    if (view === "week" || view === "list") return { from: weekStart, to: addDays(weekStart, 7) };
     const gridStart = monthGridStart(anchor);
     return { from: gridStart, to: addDays(gridStart, 42) };
   }, [view, weekStart, anchor]);
 
-  const prev = () => setAnchor((a) => (view === "week" ? addDays(a, -7) : addMonths(a, -1)));
-  const next = () => setAnchor((a) => (view === "week" ? addDays(a, 7) : addMonths(a, 1)));
+  const prev = () => setAnchor((a) => (view === "week" || view === "list" ? addDays(a, -7) : addMonths(a, -1)));
+  const next = () => setAnchor((a) => (view === "week" || view === "list" ? addDays(a, 7) : addMonths(a, 1)));
   const today = () => setAnchor(new Date());
 
   // Jump to a specific day in week view (used when clicking a day in month view).

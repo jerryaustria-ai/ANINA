@@ -260,13 +260,22 @@ router.delete(
   })
 );
 
-// Update own profile (phone, and instructor bio/specialties).
+// Update own profile. Role, account status, and permissions remain Admin-only.
 router.patch(
   "/me",
   asyncHandler(async (req, res) => {
     const previous = req.user.toObject({ depopulate: true });
-    const { phone, bio, specialties } = req.body || {};
+    const { name, phone, picture, bio, specialties } = req.body || {};
+    if (name !== undefined) {
+      const cleanName = String(name).trim();
+      if (!cleanName) throw new HttpError(400, "Name is required");
+      req.user.name = cleanName;
+    }
     if (phone !== undefined) req.user.phone = phone;
+    if (picture !== undefined) {
+      validatePicture(picture);
+      req.user.picture = picture;
+    }
     if (bio !== undefined) req.user.bio = bio;
     if (specialties !== undefined) req.user.specialties = specialties;
     await req.user.save();

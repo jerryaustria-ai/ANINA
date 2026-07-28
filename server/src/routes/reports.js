@@ -76,7 +76,7 @@ router.get(
       ClassSession.find({ endAt: { $lte: now } }).distinct("_id"),
     ]);
     const [totalBookings, todayBookings, upcomingBookings, completedBookings,
-      cancelledBookings, instructors, clients, upcomingSessions] = await Promise.all([
+      cancelledBookings, instructors, clients, pendingApprovals, cancellationRequests, upcomingSessions] = await Promise.all([
       Booking.countDocuments(),
       Booking.countDocuments({ session: { $in: todaySessionIds } }),
       Booking.countDocuments({ status: { $in: ACTIVE_BOOKINGS }, session: { $in: upcomingSessionIds } }),
@@ -85,6 +85,8 @@ router.get(
       Booking.countDocuments({ status: "cancelled" }),
       User.countDocuments({ role: "instructor", active: true }),
       User.countDocuments({ role: "client" }),
+      ClassSession.countDocuments({ status: "pending_approval" }),
+      ClassSession.countDocuments({ status: "cancellation_requested" }),
       ClassSession.find({ startAt: { $gte: now }, status: { $ne: "cancelled" } })
         .populate("instructor", "name").populate("room", "name").sort("startAt").limit(6),
     ]);
@@ -92,6 +94,7 @@ router.get(
       metrics: {
         totalBookings, todayBookings, upcomingBookings, completedBookings,
         cancelledBookings, availableInstructors: instructors, totalClients: clients,
+        pendingApprovals, cancellationRequests,
       },
       upcomingSessions: upcomingSessions.map((session) => session.toPublic()),
       serverNow: now.toISOString(),

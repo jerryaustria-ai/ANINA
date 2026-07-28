@@ -9,12 +9,13 @@ export const SESSION_TYPES = ["group", "private"];
 export const SESSION_STATUSES = [
   "draft", "open", "confirmed", "rescheduled",
   "pending_approval", "published", "rejected", "changes_requested",
-  "cancelled", "completed",
+  "on_hold", "cancellation_requested", "cancelled", "completed",
 ];
 
 const classSessionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
+    classDefinition: { type: mongoose.Schema.Types.ObjectId, ref: "ClassDefinition", default: null, index: true },
     type: { type: String, enum: SESSION_TYPES, default: "group", index: true },
 
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -49,6 +50,9 @@ const classSessionSchema = new mongoose.Schema(
     cancelledByRole: { type: String, enum: ["admin", "instructor", "client"], default: null },
     cancelledAt: { type: Date, default: null },
     cancellationReason: { type: String, default: "" },
+    cancellationRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    cancellationRequestedAt: { type: Date, default: null },
+    cancellationRequestReason: { type: String, default: "" },
   },
   { timestamps: true }
 );
@@ -62,6 +66,7 @@ classSessionSchema.methods.toPublic = function () {
   return {
     id: this._id,
     title: this.title,
+    classDefinition: this.classDefinition,
     type: this.type,
     instructor: inst,
     room: rm,
@@ -89,6 +94,9 @@ classSessionSchema.methods.toPublic = function () {
     cancelledByRole: this.cancelledByRole,
     cancelledAt: this.cancelledAt,
     cancellationReason: this.cancellationReason,
+    cancellationRequestedBy: this.cancellationRequestedBy,
+    cancellationRequestedAt: this.cancellationRequestedAt,
+    cancellationRequestReason: this.cancellationRequestReason,
   };
 };
 

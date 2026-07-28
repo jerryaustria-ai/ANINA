@@ -15,6 +15,7 @@ export default function AdminDashboard({ view }) {
   if (view === "approvals") return <ScheduleApprovalView />;
   if (view === "audit") return <AuditTrailView />;
   if (view === "people") return <PeopleView />;
+  if (view === "class-titles") return <ClassTitlesView />;
   if (view === "tiers") return <TiersView />;
   if (view === "memberships") return <MembershipsView />;
   return <ScheduleView />;
@@ -60,6 +61,8 @@ function OverviewView() {
     ["Cancelled bookings", data.metrics.cancelledBookings],
     ["Available instructors", data.metrics.availableInstructors],
     ["Total clients", data.metrics.totalClients],
+    ["Pending approvals", data.metrics.pendingApprovals],
+    ["Cancellation requests", data.metrics.cancellationRequests],
   ] : [];
 
   return <div className="page overview-page">
@@ -258,6 +261,7 @@ function ScheduleView() {
   const [sessions, setSessions] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [users, setUsers] = useState([]);
+  const [classDefinitions, setClassDefinitions] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [hidden, setHidden] = useState(new Set());
   const [sel, setSel] = useState(null);
@@ -288,8 +292,10 @@ function ScheduleView() {
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
-    Promise.all([api("/rooms"), api("/users")])
-      .then(([roomData, userData]) => { setRooms(roomData.rooms); setUsers(userData.users); })
+    Promise.all([api("/rooms"), api("/users"), api("/class-definitions")])
+      .then(([roomData, userData, classData]) => {
+        setRooms(roomData.rooms); setUsers(userData.users); setClassDefinitions(classData.classes);
+      })
       .catch((e) => toast.error(e.message));
   }, []);
   useEffect(() => {
@@ -328,10 +334,15 @@ function ScheduleView() {
     start.setDate(start.getDate() + 1); start.setHours(9, 0, 0, 0);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     setEdit({
-      title: "", type: "group", instructor: instructors[0]?.id || "", room: rooms[0]?.id || "",
-      startAt: toLocalInput(start), endAt: toLocalInput(end), capacity: 1, minToRun: 1,
+      classDefinition: classDefinitions[0]?.id || "",
+      title: classDefinitions[0]?.title || "", type: classDefinitions[0]?.type || "group",
+      instructor: instructors[0]?.id || "",
+      room: classDefinitions[0]?.defaultRoom?.id || rooms[0]?.id || "",
+      startAt: toLocalInput(start), endAt: toLocalInput(end),
+      capacity: classDefinitions[0]?.type === "private" ? 1 : classDefinitions[0]?.defaultCapacity || 8,
+      minToRun: classDefinitions[0]?.type === "private" ? 1 : classDefinitions[0]?.defaultMinToRun || 1,
       notes: "", status: "published", clientIds: [],
-      recurring: false, weekdays: [], until: "",
+      recurring: false, recurrenceFrequency: "weekly", weekdays: [], until: "",
     });
   }
 
@@ -341,6 +352,7 @@ function ScheduleView() {
       .map((booking) => booking.client?.id).filter(Boolean);
     setEdit({
       id: session.id, title: session.title, type: session.type,
+      classDefinition: session.classDefinition?.id || session.classDefinition || "",
       instructor: session.instructor?.id || "", room: session.room?.id || "",
       startAt: toLocalInput(session.startAt), endAt: toLocalInput(session.endAt),
       capacity: session.capacity, minToRun: session.minToRun, notes: session.notes || "",
@@ -358,6 +370,7 @@ function ScheduleView() {
       }
       const body = {
         title: edit.title.trim(), type: edit.type, instructor: edit.instructor, room: edit.room,
+        classDefinition: edit.classDefinition || null,
         startAt: new Date(edit.startAt).toISOString(), endAt: new Date(edit.endAt).toISOString(),
         capacity: Number(edit.capacity), minToRun: Number(edit.minToRun), notes: edit.notes,
         status: edit.status, clientIds: edit.clientIds,
@@ -372,7 +385,10 @@ function ScheduleView() {
         if (edit.recurring) {
           const result = await api("/sessions/recurring", {
             method: "POST",
-            body: { ...body, weekdays: edit.weekdays, until: edit.until },
+            body: {
+              ...body, weekdays: edit.weekdays, until: edit.until,
+              frequency: edit.recurrenceFrequency,
+            },
           });
           toast.success(`${result.count} recurring schedules created.`);
         } else {
@@ -535,11 +551,20 @@ function ScheduleView() {
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
         footer={sel && <>{sel.status === "pending_approval" ? <>
+          <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Assign Room</button>
           <button className="btn danger" onClick={() => setScheduleReview({ session: sel, action: "reject", text: "" })} disabled={busy}>Reject</button>
+          <button className="btn ghost" onClick={() => api(`/sessions/${sel.id}/hold`, { method: "POST", body: {} })
+            .then(() => { toast.info("Schedule placed on hold."); setSel(null); return load(); })
+            .catch((error) => toast.error(error.message))} disabled={busy}>Put on Hold</button>
           <button className="btn clay" onClick={() => setScheduleReview({ session: sel, action: "changes", text: "" })} disabled={busy}>Request Changes</button>
           <button className="btn" onClick={() => approveSchedule(sel)} disabled={busy}>Approve &amp; Publish</button>
         </> : !selectedClassEnded ? <>
           <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
+          {sel.status === "on_hold" && <button className="btn" onClick={() =>
+            api(`/sessions/${sel.id}/review-held`, { method: "POST", body: {} })
+              .then(() => { toast.info("Schedule returned to the approval queue."); setSel(null); return load(); })
+              .catch((error) => toast.error(error.message))
+          } disabled={busy}>Return to Review</button>}
           {sel.status === "cancelled" &&
             sel.cancelledByRole === "instructor" &&
             String(sel.cancelledBy) === String(sel.instructor?.id) &&
@@ -569,6 +594,11 @@ function ScheduleView() {
                   : "Unknown / legacy record"}</strong>
               {sel.cancelledAt ? ` · ${new Date(sel.cancelledAt).toLocaleString()}` : ""}
             </p>}
+            {sel.status === "cancellation_requested" && <div className="status-notice warning">
+              <strong>Instructor requested cancellation.</strong><br />
+              {sel.cancellationRequestReason || "No reason provided."}
+              <br />Review and notify the affected clients before cancelling or rescheduling this class.
+            </div>}
             <div className="schedule-detail-head"><h4>Client bookings</h4>
               {!selectedClassEnded && sel.status === "published" && sel.isPublished &&
                 <button className="btn sm" onClick={() => setAssign({ sessionId: sel.id, clientIds: selectedBookings.map((booking) => booking.client?.id).filter(Boolean), capacity: sel.capacity })}>Manage clients</button>}</div>
@@ -625,9 +655,22 @@ function ScheduleView() {
         footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Close</button>
           <button className="btn" onClick={saveSchedule} disabled={busy || !edit?.title || !edit?.instructor || !edit?.room}>Save</button></>}>
         {edit && <div>
-          <div className="field"><label>Available service / class name</label>
-            <input list="admin-services" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} placeholder="Select or enter a service" />
-            <datalist id="admin-services">{serviceNames.map((name) => <option value={name} key={name} />)}</datalist></div>
+          <div className="field"><label>Official class title</label>
+            <select value={edit.classDefinition || ""} onChange={(event) => {
+              const definition = classDefinitions.find((item) => item.id === event.target.value);
+              if (!definition) return;
+              setEdit({
+                ...edit,
+                classDefinition: definition.id,
+                title: definition.title,
+                type: definition.type,
+                room: definition.defaultRoom?.id || edit.room,
+                capacity: definition.type === "private" ? 1 : definition.defaultCapacity,
+                minToRun: definition.type === "private" ? 1 : definition.defaultMinToRun,
+              });
+            }}><option value="">Select an official class title</option>
+              {classDefinitions.map((item) => <option value={item.id} key={item.id}>{item.title}</option>)}
+            </select></div>
           <div className="field row"><div><label>Instructor</label><select value={edit.instructor} onChange={(e) => setEdit({ ...edit, instructor: e.target.value })}>
             <option value="">Select instructor</option>{instructors.map((u) => <option value={u.id} key={u.id}>{u.name}</option>)}</select></div>
             <div><label>Room</label><select value={edit.room} onChange={(e) => {
@@ -640,6 +683,8 @@ function ScheduleView() {
             <option value="group">Group</option><option value="private">Private</option></select></div>
             <div><label>Capacity</label><input type="number" min="1" disabled={edit.type === "private"} value={edit.capacity} onChange={(e) => setEdit({ ...edit, capacity: e.target.value })} /></div></div>
           {edit.id && <div className="field"><label>Schedule status</label><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="on_hold">On Hold</option>
             <option value="published">Published</option><option value="completed">Completed</option>
           </select></div>}
           <div className="field"><label>Assigned clients</label>
@@ -648,13 +693,17 @@ function ScheduleView() {
           {!edit.id && <div className="field recurring-fields">
             <label className="check-line"><input type="checkbox" checked={edit.recurring}
               onChange={(event) => setEdit({ ...edit, recurring: event.target.checked, clientIds: [] })} />
-              Create a recurring weekly schedule</label>
+              Create a recurring schedule</label>
             {edit.recurring && <>
-              <label>Repeat on</label>
+              <label>Frequency<select value={edit.recurrenceFrequency}
+                onChange={(event) => setEdit({ ...edit, recurrenceFrequency: event.target.value })}>
+                <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+              </select></label>
+              {edit.recurrenceFrequency === "weekly" && <><label>Repeat on</label>
               <div className="weekday-picker">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) =>
                 <label key={day}><input type="checkbox" checked={edit.weekdays.includes(index)}
                   onChange={() => setEdit({ ...edit, weekdays: edit.weekdays.includes(index)
-                    ? edit.weekdays.filter((value) => value !== index) : [...edit.weekdays, index] })} />{day}</label>)}</div>
+                    ? edit.weekdays.filter((value) => value !== index) : [...edit.weekdays, index] })} />{day}</label>)}</div></>}
               <label>Repeat until<input type="date" min={edit.startAt.slice(0, 10)} value={edit.until}
                 onChange={(event) => setEdit({ ...edit, until: event.target.value })} /></label>
               <p className="meta-line">Recurring schedules are created without client assignments. Clients can be added to each occurrence afterward.</p>
@@ -725,6 +774,18 @@ function ScheduleApprovalView() {
     } catch (error) { toast.error(error.message); }
     finally { setBusy(false); }
   }
+  async function hold(session) {
+    const reason = window.prompt("Optional reason for placing this schedule on hold:") ?? null;
+    if (reason === null) return;
+    setBusy(true);
+    try {
+      await api(`/sessions/${session.id}/hold`, { method: "POST", body: { reason } });
+      toast.info("Schedule placed on hold.");
+      setDetail(null);
+      await load();
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
 
   const details = (session) => <div className="approval-details">
     <p><strong>{session.title}</strong></p>
@@ -746,6 +807,7 @@ function ScheduleApprovalView() {
         <div className="approval-actions">
           <button className="btn ghost sm" onClick={() => setDetail(session)}>View details</button>
           <button className="btn sm" onClick={() => approve(session)} disabled={busy}>Approve & Publish</button>
+          <button className="btn ghost sm" onClick={() => hold(session)} disabled={busy}>Put on Hold</button>
           <button className="btn danger sm" onClick={() => setReview({ session, action: "reject", text: "" })}>Reject</button>
           <button className="btn clay sm" onClick={() => setReview({ session, action: "changes", text: "" })}>Request changes</button>
         </div>
@@ -754,6 +816,7 @@ function ScheduleApprovalView() {
     <Modal open={!!detail} onClose={() => setDetail(null)} title="Schedule details"
       footer={detail && <><button className="btn danger" onClick={() => setReview({ session: detail, action: "reject", text: "" })}>Reject</button>
         <button className="btn clay" onClick={() => setReview({ session: detail, action: "changes", text: "" })}>Request changes</button>
+        <button className="btn ghost" onClick={() => hold(detail)} disabled={busy}>Put on Hold</button>
         <button className="btn" onClick={() => approve(detail)} disabled={busy}>Approve & Publish</button></>}>
       {detail && details(detail)}
     </Modal>
@@ -766,6 +829,99 @@ function ScheduleApprovalView() {
         </button></>}>
       {review && <div className="field"><label>{review.action === "reject" ? "Rejection reason" : "Required changes"}</label>
         <textarea rows="4" value={review.text} onChange={(event) => setReview({ ...review, text: event.target.value })} autoFocus /></div>}
+    </Modal>
+  </div>;
+}
+
+/* ---------- Official class titles ---------- */
+const blankClassTitle = {
+  title: "", description: "", type: "group", defaultRoom: "",
+  defaultCapacity: 8, defaultMinToRun: 1, active: true,
+};
+function ClassTitlesView() {
+  const [items, setItems] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [edit, setEdit] = useState(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    const [classData, roomData] = await Promise.all([
+      api("/class-definitions?all=1"), api("/rooms"),
+    ]);
+    setItems(classData.classes);
+    setRooms(roomData.rooms);
+  }
+  useEffect(() => { load().catch((error) => toast.error(error.message)); }, []);
+
+  async function save() {
+    setBusy(true);
+    try {
+      const body = {
+        ...edit,
+        defaultRoom: edit.defaultRoom?.id || edit.defaultRoom || null,
+        defaultCapacity: Number(edit.defaultCapacity),
+        defaultMinToRun: Number(edit.defaultMinToRun),
+      };
+      if (edit.id) await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
+      else await api("/class-definitions", { method: "POST", body });
+      toast.success(edit.id ? "Official class title updated." : "Official class title created.");
+      setEdit(null);
+      await load();
+    } catch (error) { error.status === 409 ? toast.warning(error.message) : toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+  async function importExisting() {
+    try {
+      const result = await api("/class-definitions/import-existing", { method: "POST" });
+      await load();
+      toast.success(result.imported
+        ? `${result.imported} existing class title${result.imported === 1 ? "" : "s"} imported.`
+        : "All existing class titles are already available.");
+    } catch (error) { toast.error(error.message); }
+  }
+
+  return <div className="page">
+    <div className="page-head"><div><h1>Class Titles</h1>
+      <p>Manage the official classes that Admins and Instructors may schedule.</p></div>
+      <div className="page-actions"><button className="btn ghost" onClick={importExisting}>Import Existing Titles</button>
+        <button className="btn" onClick={() => setEdit({ ...blankClassTitle })}>+ Create Class Title</button></div></div>
+    <div className="grid-cards">{items.map((item) => <article className="card" key={item.id}
+      style={{ opacity: item.active ? 1 : .55 }}>
+      <h3>{item.title}</h3><p className="sub">{item.description || "No description"}</p>
+      <p className="meta-line">{item.type === "private" ? "Private 1:1" : "Group Class"}<br />
+        Default room: {item.defaultRoom?.name || "Not assigned"}<br />
+        Capacity: {item.defaultCapacity} · Minimum: {item.defaultMinToRun}</p>
+      <button className="btn ghost sm" onClick={() => setEdit({
+        ...item, defaultRoom: item.defaultRoom?.id || "",
+      })}>Edit</button>
+    </article>)}</div>
+    <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit Class Title" : "Create Class Title"}
+      footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
+        <button className="btn" onClick={save} disabled={busy || !edit?.title}>Save</button></>}>
+      {edit && <div>
+        <div className="field"><label>Class title</label><input value={edit.title}
+          onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></div>
+        <div className="field"><label>Description</label><textarea rows="3" value={edit.description}
+          onChange={(event) => setEdit({ ...edit, description: event.target.value })} /></div>
+        <div className="field row"><div><label>Class type</label><select value={edit.type}
+          onChange={(event) => setEdit({
+            ...edit, type: event.target.value,
+            defaultCapacity: event.target.value === "private" ? 1 : edit.defaultCapacity,
+            defaultMinToRun: event.target.value === "private" ? 1 : edit.defaultMinToRun,
+          })}><option value="group">Group Class</option><option value="private">Private 1:1</option></select></div>
+          <div><label>Default room</label><select value={edit.defaultRoom || ""}
+            onChange={(event) => setEdit({ ...edit, defaultRoom: event.target.value })}>
+            <option value="">No default room</option>{rooms.map((room) =>
+              <option value={room.id} key={room.id}>{room.name} (max {room.maxCapacity})</option>)}
+          </select></div></div>
+        <div className="field row"><div><label>Maximum capacity</label><input type="number" min="1"
+          disabled={edit.type === "private"} value={edit.defaultCapacity}
+          onChange={(event) => setEdit({ ...edit, defaultCapacity: event.target.value })} /></div>
+          <div><label>Minimum participants</label><input type="number" min="1"
+            disabled={edit.type === "private"} value={edit.defaultMinToRun}
+            onChange={(event) => setEdit({ ...edit, defaultMinToRun: event.target.value })} /></div></div>
+        {edit.id && <label className="check-line"><input type="checkbox" checked={edit.active}
+          onChange={(event) => setEdit({ ...edit, active: event.target.checked })} />Active</label>}
+      </div>}
     </Modal>
   </div>;
 }

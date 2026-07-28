@@ -8,6 +8,7 @@ import { sendPurchaseStatusEmailOnce } from "./email.js";
 import { createNotification, notifyAdmins } from "./notifications.js";
 import QRCode from "qrcode";
 import { issueCheckInToken } from "./checkIn.js";
+import { reserveMembershipCredit } from "./membership.js";
 
 function periodEnd(tier) {
   const date = new Date();
@@ -132,13 +133,24 @@ async function performFulfillment(purchaseId, payment = {}) {
       referenceId: purchase.referenceId,
       currentPeriodEnd: periodEnd(purchase.tier),
       sessionsIncluded: included,
-      sessionsRemaining: included === null ? null : Math.max(0, included - (bookingStatus === "accepted" ? 1 : 0)),
+      sessionsRemaining: included,
+      sessionsReserved: 0,
       unlimitedClasses: purchase.tier.unlimitedClasses,
       validClassTags: purchase.tier.classTags,
       cycleCount: 1,
       lastEvent: "payment_session.completed",
       simulated: purchase.simulated,
     });
+  }
+  if (bookingStatus === "accepted" && booking.creditStatus !== "reserved" && booking.creditStatus !== "consumed") {
+    const reserved = await reserveMembershipCredit(membership._id);
+    if (!reserved) throw Object.assign(new Error("The purchased plan has no available class credit."), { status: 409 });
+    booking.membership = membership._id;
+    booking.creditStatus = "reserved";
+    await booking.save();
+  } else if (!booking.membership) {
+    booking.membership = membership._id;
+    await booking.save();
   }
 
   purchase.client = client._id;

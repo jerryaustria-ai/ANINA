@@ -26,8 +26,12 @@ const membershipSchema = new mongoose.Schema(
     source: { type: String, enum: ["membership", "guest_checkout"], default: "membership" },
     sessionsIncluded: { type: Number, default: null },
     sessionsRemaining: { type: Number, default: null },
+    sessionsReserved: { type: Number, default: 0, min: 0 },
     unlimitedClasses: { type: Boolean, default: false },
     validClassTags: { type: [String], default: [] },
+    validityExtensionReason: { type: String, default: "" },
+    extendedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    extendedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -53,8 +57,11 @@ membershipSchema.methods.toPublic = function () {
     source: this.source,
     sessionsIncluded: this.sessionsIncluded,
     sessionsRemaining: this.sessionsRemaining,
+    sessionsReserved: this.sessionsReserved,
     unlimitedClasses: this.unlimitedClasses,
     validClassTags: this.validClassTags,
+    validityExtensionReason: this.validityExtensionReason,
+    extendedAt: this.extendedAt,
     activeNow: this.isActiveNow(),
     createdAt: this.createdAt,
   };

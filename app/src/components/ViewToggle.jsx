@@ -4,6 +4,7 @@ export default function ViewToggle({ view, onChange }) {
     <div className="view-toggle" role="group" aria-label="Calendar view">
       <button className={view === "week" ? "on" : ""} onClick={() => onChange("week")}>Week</button>
       <button className={view === "month" ? "on" : ""} onClick={() => onChange("month")}>Month</button>
+      <button className={view === "list" ? "on" : ""} onClick={() => onChange("list")}>List</button>
     </div>
   );
 }

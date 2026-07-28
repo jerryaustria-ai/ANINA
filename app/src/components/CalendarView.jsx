@@ -1,5 +1,6 @@
 import WeekView, { mondayOf } from "./WeekView.jsx";
 import MonthView from "./MonthView.jsx";
+import ListView from "./ListView.jsx";
 
 /* Renders the active calendar view (week or month) from a useCalendar() state
    object, so dashboards don't repeat the branching. Week view also supports
@@ -18,6 +19,7 @@ export default function CalendarView({ cal, events, onEventClick, onSlotSelect, 
   if (cal.view === "month") {
     return <MonthView anchor={cal.anchor} onDayClick={cal.goToDay} {...shared} />;
   }
+  if (cal.view === "list") return <ListView {...shared} />;
   return (
     <WeekView
       weekStart={cal.weekStart}

@@ -38,6 +38,19 @@ export function AuthProvider({ children }) {
     setUser(user);
     return user;
   }
+  async function registerWithPassword(form) {
+    const { token, user } = await api("/auth/register", { method: "POST", body: form });
+    setToken(token);
+    setUser(user);
+    return user;
+  }
+
+  async function loginWithFacebook(accessToken) {
+    const { token, user } = await api("/auth/facebook", { method: "POST", body: { accessToken } });
+    setToken(token);
+    setUser(user);
+    return user;
+  }
 
   async function devLogin(email) {
     const { token, user } = await api("/auth/dev-login", { method: "POST", body: { email } });
@@ -52,7 +65,8 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, loading, loginWithGoogle, loginWithPassword, devLogin, logout, setUser }}>
+    <AuthCtx.Provider value={{ user, loading, loginWithGoogle, loginWithPassword,
+      registerWithPassword, loginWithFacebook, devLogin, logout, setUser }}>
       {children}
     </AuthCtx.Provider>
   );

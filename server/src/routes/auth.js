@@ -4,6 +4,7 @@ import { OAuth2Client } from "google-auth-library";
 import { User } from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { verifyPassword } from "../services/password.js";
+import { hashPassword } from "../services/password.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { notifyAdmins } from "../services/notifications.js";
 
@@ -25,6 +26,38 @@ function signToken(user) {
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
+
+async function notifyRegistration(user) {
+  await notifyAdmins({
+    type: "NEW_USER_REGISTRATION",
+    title: "New User Registration",
+    message: `${user.name} created a ${user.role} account.`,
+    relatedUserId: user._id,
+    eventKey: `user-registration:${user._id}`,
+  }, user._id);
+}
+
+router.post(
+  "/register",
+  asyncHandler(async (req, res) => {
+    const email = cleanEmail(req.body?.email);
+    const name = String(req.body?.name || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const password = req.body?.password;
+    if (!name || !email || typeof password !== "string") {
+      throw new HttpError(400, "Name, email, and password are required.");
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Invalid email");
+    if (password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+    if (await User.exists({ email })) throw new HttpError(409, "An account with this email already exists.");
+    const user = await User.create({
+      name, email, phone, role: "client", active: true,
+      passwordHash: await hashPassword(password),
+    });
+    await notifyRegistration(user);
+    res.status(201).json({ token: signToken(user), user: user.toPublic() });
+  })
+);
 
 // POST /api/auth/login { email, password }
 router.post(
@@ -77,13 +110,7 @@ router.post(
         picture: payload.picture || "",
         role: isAdmin ? "admin" : "client",
       });
-      await notifyAdmins({
-        type: "NEW_USER_REGISTRATION",
-        title: "New User Registration",
-        message: `${user.name} created a ${user.role} account.`,
-        relatedUserId: user._id,
-        eventKey: `user-registration:${user._id}`,
-      }, user._id);
+      await notifyRegistration(user);
     } else {
       // Keep profile fresh; promote to admin if now on the allowlist.
       user.googleId = user.googleId || payload.sub;
@@ -93,6 +120,45 @@ router.post(
       await user.save();
     }
 
+    res.json({ token: signToken(user), user: user.toPublic() });
+  })
+);
+
+router.post(
+  "/facebook",
+  asyncHandler(async (req, res) => {
+    const accessToken = String(req.body?.accessToken || "");
+    const appId = process.env.FACEBOOK_APP_ID;
+    const appSecret = process.env.FACEBOOK_APP_SECRET;
+    if (!accessToken) throw new HttpError(400, "Missing Facebook access token");
+    if (!appId || !appSecret) throw new HttpError(503, "Facebook login is not configured.");
+    const appToken = `${appId}|${appSecret}`;
+    const debugResponse = await fetch(`https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(appToken)}`);
+    const debug = await debugResponse.json();
+    if (!debugResponse.ok || !debug.data?.is_valid || String(debug.data.app_id) !== String(appId)) {
+      throw new HttpError(401, "Could not verify Facebook sign-in.");
+    }
+    const profileResponse = await fetch(`https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${encodeURIComponent(accessToken)}`);
+    const profile = await profileResponse.json();
+    if (!profileResponse.ok || !profile.email) {
+      throw new HttpError(400, "Your Facebook account must share a verified email address.");
+    }
+    const email = cleanEmail(profile.email);
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({
+        email,
+        name: profile.name || email.split("@")[0],
+        picture: profile.picture?.data?.url || "",
+        role: "client",
+      });
+      await notifyRegistration(user);
+    } else {
+      if (!user.active) throw new HttpError(403, "This account is inactive.");
+      user.name = profile.name || user.name;
+      user.picture = profile.picture?.data?.url || user.picture;
+      await user.save();
+    }
     res.json({ token: signToken(user), user: user.toPublic() });
   })
 );

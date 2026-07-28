@@ -5,13 +5,20 @@ import { User } from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { claimSeat, releaseSeat } from "../services/capacity.js";
-import { hasActiveMembership } from "../services/membership.js";
+import {
+  consumeReservedCredit,
+  findEligibleMembership,
+  membershipAllowsClass,
+  reserveMembershipCredit,
+  returnMembershipCredit,
+} from "../services/membership.js";
 import { findClientConflict } from "../services/conflict.js";
 import { assertScheduleBookable } from "../services/scheduleTime.js";
 import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
+import { Membership } from "../models/Membership.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 
 const router = Router();
@@ -19,6 +26,22 @@ router.use(requireAuth);
 
 const isOwnerInstructor = (req, session) =>
   req.user.role === "admin" || session.instructor.toString() === req.user._id.toString();
+
+async function finalizeEndedPresentBookings(filter = {}) {
+  const candidates = await Booking.find({
+    ...filter,
+    creditStatus: "reserved",
+    attendanceStatus: "present",
+  }).populate("session");
+  const ended = candidates.filter((booking) =>
+    booking.session && new Date(booking.session.endAt) <= new Date());
+  for (const booking of ended) {
+    await consumeReservedCredit(booking.membership);
+    booking.creditStatus = "consumed";
+    booking.status = "attended";
+    await booking.save();
+  }
+}
 
 async function recordBookingAudit({ booking, session, actor, action, description, previousValue = null }) {
   const classSession = session?._id ? session : await ClassSession.findById(session);
@@ -107,12 +130,11 @@ router.post(
     if (!session) throw new HttpError(404, "Session not found");
     assertScheduleBookable(session);
 
-    // Gate: clients must hold an active membership to book. (Admin exempt.)
-    if (req.user.role === "client" && !(await hasActiveMembership(req.user._id))) {
-      throw new HttpError(402, "An active membership is required to book classes");
-    }
-
     const clientId = req.user.role === "admin" && req.body.clientId ? req.body.clientId : req.user._id;
+    const membership = await findEligibleMembership(clientId, session.title);
+    if (!membership) {
+      throw new HttpError(402, "An active eligible plan with remaining credit is required to book this class.");
+    }
     await validateClientSlot({ clientId, session });
     const existing = await Booking.findOne({ session: sessionId, client: clientId });
     if (existing && !["cancelled", "declined"].includes(existing.status)) {
@@ -124,9 +146,14 @@ router.post(
     if (existing) {
       existing.status = "pending";
       existing.note = note || "";
+      existing.membership = membership._id;
+      existing.creditStatus = "none";
       booking = await existing.save();
     } else {
-      booking = await Booking.create({ session: sessionId, client: clientId, note: note || "", status: "pending" });
+      booking = await Booking.create({
+        session: sessionId, client: clientId, membership: membership._id,
+        note: note || "", status: "pending", creditStatus: "none",
+      });
     }
     await recordBookingAudit({
       booking, session, actor: req.user,
@@ -144,6 +171,7 @@ router.get(
   "/",
   requireRole("admin"),
   asyncHandler(async (_req, res) => {
+    await finalizeEndedPresentBookings();
     const bookings = await Booking.find()
       .populate("client", "name email picture phone active")
       .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] })
@@ -165,6 +193,10 @@ router.post(
     const session = await ClassSession.findById(sessionId);
     if (!session) throw new HttpError(404, "Session not found");
     assertScheduleBookable(session);
+    const membership = await findEligibleMembership(clientId, session.title);
+    if (!membership) {
+      throw new HttpError(402, "This client does not have an active eligible plan with remaining credit.");
+    }
     await validateClientSlot({ clientId, session });
     const existing = await Booking.findOne({ session: sessionId, client: clientId });
     if (existing && !["cancelled", "declined"].includes(existing.status)) {
@@ -173,11 +205,17 @@ router.post(
 
     const seat = await claimSeat(session._id);
     if (!seat) throw new HttpError(409, "This schedule is already full");
+    let creditReserved = false;
     try {
+      const reserved = await reserveMembershipCredit(membership._id);
+      if (!reserved) throw new HttpError(409, "The selected plan no longer has an available credit.");
+      creditReserved = true;
       const previous = existing?.toObject({ depopulate: true }) || null;
       const booking = existing || new Booking({ session: sessionId, client: clientId });
       booking.status = "accepted";
       booking.note = note;
+      booking.membership = membership._id;
+      booking.creditStatus = "reserved";
       await booking.save();
       await recordBookingAudit({
         booking, session, actor: req.user, action: "BOOKING_CREATED",
@@ -189,6 +227,7 @@ router.post(
       res.status(201).json({ booking: booking.toPublic() });
     } catch (error) {
       await releaseSeat(session._id);
+      if (creditReserved) await returnMembershipCredit(membership._id);
       throw error;
     }
   })
@@ -198,6 +237,7 @@ router.post(
 router.get(
   "/mine",
   asyncHandler(async (req, res) => {
+    await finalizeEndedPresentBookings({ client: req.user._id });
     const bookings = await Booking.find({ client: req.user._id })
       .populate({ path: "session", populate: [{ path: "instructor", select: "name picture" }, { path: "room", select: "name color" }] })
       .sort("-createdAt");
@@ -235,8 +275,26 @@ router.post(
       await announceBooking(booking, booking.session, req.user._id, "waitlisted");
       return res.status(200).json({ booking: booking.toPublic(), waitlisted: true, reason: "class full" });
     }
-    booking.status = "accepted";
-    await booking.save();
+    const membership = await findEligibleMembership(booking.client, booking.session.title);
+    if (!membership) {
+      await releaseSeat(booking.session._id);
+      throw new HttpError(402, "The client no longer has an eligible plan credit for this class.");
+    }
+    const reserved = await reserveMembershipCredit(membership._id);
+    if (!reserved) {
+      await releaseSeat(booking.session._id);
+      throw new HttpError(409, "The client's plan no longer has an available credit.");
+    }
+    try {
+      booking.status = "accepted";
+      booking.membership = membership._id;
+      booking.creditStatus = "reserved";
+      await booking.save();
+    } catch (error) {
+      await releaseSeat(booking.session._id);
+      await returnMembershipCredit(membership._id);
+      throw error;
+    }
     await recordBookingAudit({
       booking, session: booking.session, actor: req.user, action: "BOOKING_APPROVED",
       description: `Approved booking for ${booking.session.title}.`,
@@ -268,14 +326,38 @@ router.patch(
     if (duplicate) throw new HttpError(409, "Client already has a booking record for the target schedule");
 
     const wasAccepted = booking.status === "accepted";
+    let replacementMembership = null;
+    let replacementCreditReserved = false;
+    let currentMembership = null;
+    if (wasAccepted && booking.creditStatus === "reserved" && booking.membership) {
+      currentMembership = await Membership.findById(booking.membership);
+      if (!currentMembership || !membershipAllowsClass(currentMembership, target.title)) {
+        replacementMembership = await findEligibleMembership(booking.client, target.title);
+        if (!replacementMembership) {
+          throw new HttpError(402, "The client does not have an active plan that covers the target class.");
+        }
+      }
+    }
     if (wasAccepted) {
       const seat = await claimSeat(target._id);
       if (!seat) throw new HttpError(409, "Target schedule is already full");
+      if (replacementMembership) {
+        const reserved = await reserveMembershipCredit(replacementMembership._id);
+        if (!reserved) {
+          await releaseSeat(target._id);
+          throw new HttpError(409, "The client's target plan no longer has an available credit.");
+        }
+        replacementCreditReserved = true;
+      }
     }
     const oldSessionId = booking.session._id;
     try {
       booking.session = target._id;
       booking.status = wasAccepted ? "accepted" : "pending";
+      if (replacementMembership) {
+        booking.membership = replacementMembership._id;
+        booking.creditStatus = "reserved";
+      }
       if (req.body.note !== undefined) booking.note = req.body.note;
       await booking.save();
       await recordBookingAudit({
@@ -284,6 +366,7 @@ router.patch(
         previousValue: previous,
       });
       if (wasAccepted) await releaseSeat(oldSessionId);
+      if (replacementMembership && currentMembership) await returnMembershipCredit(currentMembership._id);
       await announceBooking(booking, target, req.user._id, wasAccepted ? "approved" : "requested");
       const result = await Booking.findById(booking._id)
         .populate("client", "name email picture phone")
@@ -291,6 +374,7 @@ router.patch(
       res.json({ booking: result.toPublic(), rescheduled: true });
     } catch (error) {
       if (wasAccepted) await releaseSeat(target._id);
+      if (replacementCreditReserved) await returnMembershipCredit(replacementMembership._id);
       throw error;
     }
   })
@@ -304,6 +388,10 @@ router.post(
     const booking = await loadForDecision(req);
     const previous = booking.toObject({ depopulate: true });
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
+    if (booking.creditStatus === "reserved") {
+      await returnMembershipCredit(booking.membership);
+      booking.creditStatus = "returned";
+    }
     booking.status = "declined";
     await booking.save();
     await recordBookingAudit({
@@ -325,6 +413,10 @@ router.post(
     assertScheduleBookable(booking.session);
     const previous = booking.toObject({ depopulate: true });
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
+    if (booking.creditStatus === "reserved") {
+      await returnMembershipCredit(booking.membership);
+      booking.creditStatus = "returned";
+    }
     booking.status = "waitlisted";
     await booking.save();
     await recordBookingAudit({
@@ -369,7 +461,13 @@ router.post(
     booking.attendanceRecordedBy = req.user._id;
     // Before class end, attendance is provisional and the confirmed booking
     // remains active. Once the class has ended, persist the final outcome.
-    if (classEnded) booking.status = attendanceStatus === "present" ? "attended" : "no_show";
+    if (classEnded) {
+      booking.status = attendanceStatus === "present" ? "attended" : "no_show";
+      if (attendanceStatus === "present" && booking.creditStatus === "reserved") {
+        await consumeReservedCredit(booking.membership);
+        booking.creditStatus = "consumed";
+      }
+    }
     await booking.save();
     await recordBookingAudit({
       booking,
@@ -394,6 +492,10 @@ router.post(
     const previous = booking.toObject({ depopulate: true });
 
     if (booking.status === "accepted") await releaseSeat(booking.session._id);
+    if (booking.creditStatus === "reserved") {
+      await returnMembershipCredit(booking.membership);
+      booking.creditStatus = "returned";
+    }
     booking.status = "cancelled";
     await booking.save();
     await recordBookingAudit({

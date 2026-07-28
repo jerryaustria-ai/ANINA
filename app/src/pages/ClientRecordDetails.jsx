@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { api } from "../api.js";
 import { fmtMoney } from "../util.js";
+import Modal from "../components/Modal.jsx";
 
 const date = (value, withTime = false) => value
   ? new Date(value).toLocaleString("en-PH", withTime
@@ -14,6 +15,7 @@ export default function ClientRecordDetails() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [extension, setExtension] = useState(null);
 
   async function load() {
     try {
@@ -37,6 +39,19 @@ export default function ClientRecordDetails() {
     } finally {
       setBusy("");
     }
+  }
+  async function extendValidity() {
+    setBusy(extension.plan.membershipId);
+    try {
+      await api(`/memberships/${extension.plan.membershipId}/extend-validity`, {
+        method: "POST",
+        body: { expirationDate: extension.expirationDate, reason: extension.reason },
+      });
+      setExtension(null);
+      await load();
+      toast.success("Plan validity extended and the client was notified.");
+    } catch (requestError) { toast.error(requestError.message); }
+    finally { setBusy(""); }
   }
 
   if (error) return <div className="page"><div className="empty">{error}</div></div>;
@@ -88,8 +103,12 @@ export default function ClientRecordDetails() {
             </>}
             <div><dt>Current Status</dt><dd>{plan.planStatus}</dd></div>
           </dl>
-          {plan.membershipId && <button className="btn danger sm" disabled={busy === plan.membershipId}
-            onClick={() => cancelPlan(plan)}>Cancel Plan</button>}
+          {plan.membershipId && <div className="record-actions">
+            {plan.membershipType === "one_time" && <button className="btn ghost sm"
+              onClick={() => setExtension({ plan, expirationDate: "", reason: "" })}>Extend Validity</button>}
+            <button className="btn danger sm" disabled={busy === plan.membershipId}
+              onClick={() => cancelPlan(plan)}>Cancel Plan</button>
+          </div>}
         </article>)}</div>}
     </section>
 
@@ -111,5 +130,20 @@ export default function ClientRecordDetails() {
           </tr>)}</tbody>
         </table></div>}
     </section>
+    <Modal open={!!extension} onClose={() => setExtension(null)} title="Extend Plan Validity"
+      footer={<><button className="btn ghost" onClick={() => setExtension(null)}>Cancel</button>
+        <button className="btn" onClick={extendValidity}
+          disabled={busy || !extension?.expirationDate || !extension?.reason.trim()}>Confirm Extension</button></>}>
+      {extension && <div>
+        <p className="meta-line">Plan: <strong>{extension.plan.purchasedPlan}</strong><br />
+          Current expiration: {date(extension.plan.expirationDate)}</p>
+        <div className="field"><label>New expiration date</label><input type="date"
+          min={new Date().toISOString().slice(0, 10)} value={extension.expirationDate}
+          onChange={(event) => setExtension({ ...extension, expirationDate: event.target.value })} /></div>
+        <div className="field"><label>Extension reason</label><textarea rows="4"
+          value={extension.reason} onChange={(event) => setExtension({ ...extension, reason: event.target.value })}
+          placeholder="Example: Instructor cancellation left no replacement class within the original validity period." /></div>
+      </div>}
+    </Modal>
   </div>;
 }

@@ -25,6 +25,13 @@ const bookingSchema = new mongoose.Schema(
     source: { type: String, enum: ["client", "admin", "guest_checkout"], default: "client" },
     paymentStatus: { type: String, enum: ["unpaid", "pending", "paid", "refunded"], default: "unpaid" },
     purchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", default: null, index: true },
+    membership: { type: mongoose.Schema.Types.ObjectId, ref: "Membership", default: null, index: true },
+    creditStatus: {
+      type: String,
+      enum: ["none", "reserved", "consumed", "returned", "voided"],
+      default: "none",
+      index: true,
+    },
     attendanceStatus: {
       type: String,
       enum: ["pending", "present", "absent", "no_show"],
@@ -66,6 +73,8 @@ bookingSchema.methods.toPublic = function () {
     attendanceRecordedAt: this.attendanceRecordedAt,
     checkInUsedAt: this.checkInUsedAt,
     purchase: this.purchase,
+    membership: this.membership,
+    creditStatus: this.creditStatus,
     createdAt: this.createdAt,
   };
 };

@@ -14,15 +14,17 @@ import GuestBooking from "./pages/GuestBooking.jsx";
 import GuestCheckout from "./pages/GuestCheckout.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
 import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
+import ProfileSettings from "./pages/ProfileSettings.jsx";
+import Notifications from "./pages/Notifications.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
 function Nav() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const tabs = {
-    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Memberships"]],
-    instructor: [["/dashboard", "My Classes"], ["/dashboard/check-in", "QR Check-in"]],
-    admin: [["/dashboard", "Overview"], ["/dashboard/schedule", "Studio Schedule"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
+    client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Memberships"], ["/dashboard/profile", "Profile"]],
+    instructor: [["/dashboard", "My Classes"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/profile", "Profile"]],
+    admin: [["/dashboard", "Overview"], ["/dashboard/schedule", "Studio Schedule"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/class-titles", "Class Titles"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"], ["/dashboard/profile", "Profile"]],
   }[user.role] || [];
 
   return (
@@ -59,6 +61,8 @@ function Dashboard() {
         {["admin", "instructor"].includes(user.role) && <Route path="check-in" element={
           <Suspense fallback={<div className="spinner">Loading scanner…</div>}><CheckInScanner /></Suspense>
         } />}
+        <Route path="profile" element={<ProfileSettings />} />
+        <Route path="notifications" element={<Notifications />} />
         {user.role === "admin" && (
           <>
             <Route index element={<AdminDashboard view="overview" />} />
@@ -67,6 +71,7 @@ function Dashboard() {
             <Route path="audit-trail" element={<AdminDashboard view="audit" />} />
             <Route path="rooms" element={<AdminDashboard view="rooms" />} />
             <Route path="people" element={<AdminDashboard view="people" />} />
+            <Route path="class-titles" element={<AdminDashboard view="class-titles" />} />
             <Route path="tiers" element={<AdminDashboard view="tiers" />} />
             <Route path="memberships" element={<AdminDashboard view="memberships" />} />
             <Route path="clients/:clientId" element={<ClientRecordDetails />} />
