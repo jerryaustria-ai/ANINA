@@ -80,6 +80,7 @@ async function announceBooking(booking, session, actorId, action) {
     declined: ["BOOKING_DECLINED", "Request Declined", `Your request for ${className} was declined.`],
     cancelled: ["BOOKING_CANCELLED", "Booking Cancelled", `Your booking for ${className} was cancelled.`],
     waitlisted: ["BOOKING_STATUS_CHANGED", "Booking Waitlisted", `Your booking for ${className} was moved to the waitlist.`],
+    rescheduled: ["BOOKING_STATUS_CHANGED", "Booking Rescheduled", `Your booking was moved to ${className}.`],
   };
   const [type, title, message] = definitions[action];
   await createNotification({
@@ -101,6 +102,50 @@ async function announceBooking(booking, session, actorId, action) {
     message: `${client?.name || "A client"} — ${className}: ${action}.`,
     relatedUserId: client?._id, relatedBookingId: booking._id, relatedScheduleId: session._id, eventKey,
   }, actorId);
+}
+
+const sameClassName = (left, right) =>
+  String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+
+async function loadRescheduleContext(req) {
+  const booking = await Booking.findById(req.params.id)
+    .populate("session")
+    .populate("membership");
+  if (!booking) throw new HttpError(404, "Booking not found");
+  if (req.user.role === "client" && String(booking.client) !== String(req.user._id)) {
+    throw new HttpError(403, "You can only reschedule your own booking.");
+  }
+  if (!["pending", "accepted", "waitlisted"].includes(booking.status)) {
+    throw new HttpError(409, "This booking can no longer be rescheduled.");
+  }
+  const membership = booking.membership;
+  const now = new Date();
+  if (!membership || membership.status !== "active" ||
+      (membership.currentPeriodEnd && membership.currentPeriodEnd < now)) {
+    throw new HttpError(409, "The plan used for this booking is no longer active.");
+  }
+  return { booking, membership, now };
+}
+
+function validateReplacementSchedule({ booking, membership, target, now = new Date() }) {
+  if (!sameClassName(target.title, booking.session.title)) {
+    throw new HttpError(409, "The replacement schedule must be for the same class.");
+  }
+  if (target.status !== "published" || target.isPublished !== true) {
+    throw new HttpError(409, "The replacement schedule is not published or available for booking.");
+  }
+  if (new Date(target.startAt) <= now) {
+    throw new HttpError(409, "The replacement schedule has already started.");
+  }
+  const validFrom = membership.createdAt && new Date(membership.createdAt);
+  const validUntil = membership.currentPeriodEnd && new Date(membership.currentPeriodEnd);
+  if ((validFrom && new Date(target.startAt) < validFrom) ||
+      (validUntil && new Date(target.startAt) > validUntil)) {
+    throw new HttpError(409, "The replacement schedule is outside your plan validity period.");
+  }
+  if (target.acceptedCount >= target.capacity) {
+    throw new HttpError(409, "The replacement schedule is already full.");
+  }
 }
 
 async function validateClientSlot({ clientId, session, excludeBookingId }) {
@@ -302,6 +347,120 @@ router.post(
     });
     await announceBooking(booking, booking.session, req.user._id, "approved");
     res.json({ booking: booking.toPublic(), seatsLeft: Math.max(0, seat.capacity - seat.acceptedCount) });
+  })
+);
+
+// Client/Admin: list only schedules that can replace this booking while using
+// the same purchased plan credit.
+router.get(
+  "/:id/reschedule-options",
+  requireRole("client", "admin"),
+  asyncHandler(async (req, res) => {
+    const { booking, membership, now } = await loadRescheduleContext(req);
+    const validFrom = membership.createdAt && new Date(membership.createdAt) > now
+      ? new Date(membership.createdAt)
+      : now;
+    const query = {
+      _id: { $ne: booking.session._id },
+      title: booking.session.title,
+      status: "published",
+      isPublished: true,
+      startAt: {
+        $gt: validFrom,
+        ...(membership.currentPeriodEnd ? { $lte: membership.currentPeriodEnd } : {}),
+      },
+      $expr: { $lt: ["$acceptedCount", "$capacity"] },
+    };
+    const candidates = await ClassSession.find(query)
+      .populate("instructor", "name picture")
+      .populate("room", "name color location")
+      .sort("startAt");
+    const targetIds = candidates.map((session) => session._id);
+    const existingTargets = new Set((await Booking.find({
+      client: booking.client,
+      session: { $in: targetIds },
+      _id: { $ne: booking._id },
+    }).select("session")).map((item) => String(item.session)));
+
+    const eligible = [];
+    for (const session of candidates) {
+      if (existingTargets.has(String(session._id))) continue;
+      const clash = await findClientConflict({
+        clientId: booking.client,
+        startAt: session.startAt,
+        endAt: session.endAt,
+        excludeSessionId: booking.session._id,
+        excludeBookingId: booking._id,
+      });
+      if (!clash) eligible.push(session);
+    }
+    res.json({
+      schedules: eligible.map((session) => session.toPublic()),
+      validity: {
+        startsAt: membership.createdAt,
+        endsAt: membership.currentPeriodEnd,
+      },
+    });
+  })
+);
+
+router.post(
+  "/:id/reschedule",
+  requireRole("client", "admin"),
+  asyncHandler(async (req, res) => {
+    const { booking, membership } = await loadRescheduleContext(req);
+    const targetId = req.body?.sessionId;
+    if (!targetId) throw new HttpError(400, "sessionId is required");
+    if (String(targetId) === String(booking.session._id)) {
+      throw new HttpError(409, "Please select a different schedule.");
+    }
+    const target = await ClassSession.findById(targetId);
+    if (!target) throw new HttpError(404, "Replacement schedule not found");
+    validateReplacementSchedule({ booking, membership, target });
+    await validateClientSlot({
+      clientId: booking.client,
+      session: target,
+      excludeBookingId: booking._id,
+    });
+    const duplicate = await Booking.findOne({
+      session: target._id,
+      client: booking.client,
+      _id: { $ne: booking._id },
+    });
+    if (duplicate) throw new HttpError(409, "You already have a booking record for the replacement schedule.");
+
+    const previous = booking.toObject({ depopulate: true });
+    const previousSession = booking.session;
+    const wasAccepted = booking.status === "accepted";
+    if (wasAccepted) {
+      const seat = await claimSeat(target._id);
+      if (!seat) throw new HttpError(409, "The replacement schedule is already full.");
+    }
+    try {
+      booking.session = target._id;
+      booking.status = wasAccepted ? "accepted" : "pending";
+      if (req.body.note !== undefined) booking.note = req.body.note;
+      await booking.save();
+    } catch (error) {
+      if (wasAccepted) await releaseSeat(target._id);
+      throw error;
+    }
+    if (wasAccepted) await releaseSeat(previousSession._id);
+    await recordBookingAudit({
+      booking,
+      session: target,
+      actor: req.user,
+      action: "BOOKING_RESCHEDULED",
+      description: `Rescheduled a booking from ${previousSession.title} to ${target.title}.`,
+      previousValue: previous,
+    });
+    await announceBooking(booking, target, req.user._id, "rescheduled");
+    const result = await Booking.findById(booking._id)
+      .populate({ path: "session", populate: [
+        { path: "instructor", select: "name email picture" },
+        { path: "room", select: "name color location" },
+      ] });
+    res.json({ booking: result.toPublic(), rescheduled: true });
   })
 );
 

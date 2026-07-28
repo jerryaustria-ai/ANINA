@@ -40,6 +40,7 @@ export default function ClientDashboard() {
   const [membership, setMembership] = useState(null);
   const [purchases, setPurchases] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [reschedule, setReschedule] = useState(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -126,6 +127,42 @@ export default function ClientDashboard() {
     finally { setBusy(false); }
   }
 
+  async function openReschedule(booking) {
+    setReschedule({ booking, schedules: [], sessionId: "", loading: true, error: "" });
+    try {
+      const result = await api(`/bookings/${booking.id}/reschedule-options`);
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, schedules: result.schedules, validity: result.validity, loading: false }
+        : current);
+    } catch (error) {
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, loading: false, error: error.message }
+        : current);
+    }
+  }
+
+  async function confirmReschedule() {
+    if (!reschedule?.sessionId) return;
+    setBusy(true);
+    try {
+      await api(`/bookings/${reschedule.booking.id}/reschedule`, {
+        method: "POST",
+        body: { sessionId: reschedule.sessionId },
+      });
+      toast.success("Booking rescheduled successfully.");
+      setReschedule(null);
+      setSelected(null);
+      await load();
+    } catch (error) {
+      toast.error(error.message);
+      // Refresh eligibility because capacity or availability may have changed
+      // while the modal was open.
+      await openReschedule(reschedule.booking);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const upcoming = mine
     .filter((b) => b.session && !["cancelled", "declined"].includes(b.status) && !unavailableReason(b.session))
     .sort((a, b) => new Date(a.session.startAt) - new Date(b.session.startAt));
@@ -174,9 +211,12 @@ export default function ClientDashboard() {
               {b.paymentStatus === "paid" && <div className="sub">Payment: Paid</div>}
               <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status]}</span>
-                <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" })
-                  .then(() => { toast.success("Booking cancelled."); return load(); })
-                  .catch((e) => toast.error(e.message))}>Cancel</button>
+                <span style={{ display: "flex", gap: "0.4rem" }}>
+                  <button className="btn ghost sm" onClick={() => openReschedule(b)}>Reschedule</button>
+                  <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" })
+                    .then(() => { toast.success("Booking cancelled."); return load(); })
+                    .catch((e) => toast.error(e.message))}>Cancel</button>
+                </span>
               </div>
             </div>
           ))}
@@ -230,7 +270,8 @@ export default function ClientDashboard() {
         title={sel?.title}
         footer={sel && (
           selActive
-            ? <button className="btn danger" onClick={cancel} disabled={busy}>Cancel booking</button>
+            ? <><button className="btn ghost" onClick={() => openReschedule(selBooking)} disabled={busy}>Reschedule</button>
+              <button className="btn danger" onClick={cancel} disabled={busy}>Cancel booking</button></>
             : selUnavailable
               ? <button className="btn" disabled>{selUnavailable === "cancelled" ? "Class Cancelled" : "Class Finished"}</button>
             : !canBook
@@ -257,6 +298,30 @@ export default function ClientDashboard() {
             {selActive && <p className="meta-line">You're {STATUS_LABEL[selBooking.status].toLowerCase()} for this class.</p>}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!reschedule} onClose={() => !busy && setReschedule(null)} title="Reschedule booking"
+        footer={<><button className="btn ghost" onClick={() => setReschedule(null)} disabled={busy}>Close</button>
+          <button className="btn" onClick={confirmReschedule}
+            disabled={busy || reschedule?.loading || !reschedule?.sessionId}>Confirm reschedule</button></>}>
+        {reschedule && <div>
+          <p className="meta-line">Current class: <strong>{reschedule.booking.session?.title}</strong><br />
+            {fmtRange(reschedule.booking.session?.startAt, reschedule.booking.session?.endAt)}</p>
+          {reschedule.loading ? <div className="empty">Checking eligible schedules…</div>
+            : reschedule.error ? <div className="status-notice error">{reschedule.error}</div>
+              : reschedule.schedules.length === 0
+                ? <div className="empty">No available schedules for this class are within your plan validity period.</div>
+                : <div className="field"><label>Eligible replacement schedule</label>
+                  <select value={reschedule.sessionId}
+                    onChange={(event) => setReschedule({ ...reschedule, sessionId: event.target.value })}>
+                    <option value="">Select a schedule</option>
+                    {reschedule.schedules.map((session) =>
+                      <option key={session.id} value={session.id}>
+                        {fmtRange(session.startAt, session.endAt)} — {session.instructor?.name} — {session.seatsLeft} slot{session.seatsLeft === 1 ? "" : "s"} left
+                      </option>)}
+                  </select>
+                </div>}
+        </div>}
       </Modal>
     </div>
   );
