@@ -194,7 +194,9 @@ a { color:var(--sage-deep); }
 .sidebar-brand img { display:block; width:150px; max-height:49px; object-fit:contain; }
 .sidebar-menu { flex:1; overflow-y:auto; padding:28px 11px 18px; scrollbar-width:thin; }
 .sidebar-link { min-height:48px; display:flex; align-items:center; gap:15px; margin:3px 0; padding:0 18px;
-  border-radius:9px; color:#3f3a34; font-size:.91rem; transition:background .16s,color .16s,transform .16s; }
+  border-radius:9px; color:#3f3a34; font-size:.91rem; text-decoration:none;
+  transition:background .16s,color .16s,transform .16s; }
+.sidebar-link:visited,.sidebar-link:hover,.sidebar-link:focus,.sidebar-link.active { text-decoration:none; }
 .sidebar-link:hover { background:#f1ede7; color:#241f1a; transform:translateX(1px); }
 .sidebar-link.active { color:#fff; background:linear-gradient(105deg,#55483b,#776857); box-shadow:0 5px 15px rgba(63,52,42,.13); }
 .menu-icon { width:21px; height:21px; flex:0 0 21px; }
@@ -758,16 +760,6 @@ a { color:var(--sage-deep); }
   .report-table-wrap { overflow:visible; }
 }
 
-.notification-view-all { width:100%; border:0; border-top:1px solid var(--line); padding:.75rem;
-  background:var(--paper); color:var(--olive); font-weight:700; cursor:pointer; }
-.notification-history { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--paper); }
-.notification-history-item { width:100%; border:0; border-bottom:1px solid var(--line); background:transparent;
-  padding:1rem; display:grid; grid-template-columns:auto 1fr auto; align-items:start; gap:.75rem; text-align:left; color:var(--ink); }
-.notification-history-item.unread { background:#f3f5ed; }
-.notification-history-item>span:nth-child(2) { display:grid; gap:.25rem; }
-.notification-history-item strong { font-size:.85rem; }
-.notification-history-item span span,.notification-history-item time { color:var(--ink-soft); font-size:.72rem; }
-.notification-history-item em { font-size:.68rem; color:var(--ink-soft); }
 .profile-form { width:min(640px,100%); }
 .profile-form>.picture-picker { margin-bottom:1.2rem; }
 .field small { display:block; margin-top:.25rem; color:var(--ink-soft); font-size:.68rem; }

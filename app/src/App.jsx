@@ -15,7 +15,6 @@ import GuestCheckout from "./pages/GuestCheckout.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
 import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
 import ProfileSettings from "./pages/ProfileSettings.jsx";
-import Notifications from "./pages/Notifications.jsx";
 import Avatar from "./components/Avatar.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
@@ -24,13 +23,11 @@ const MENU = {
     ["/dashboard", "My Bookings", "bookings"],
     ["/schedule", "Published Schedule", "calendar"],
     ["/dashboard/membership", "My Plans", "plans"],
-    ["/dashboard/notifications", "Announcements", "announce"],
     ["/dashboard/profile", "Profile", "profile"],
   ],
   instructor: [
     ["/dashboard", "My Classes", "calendar"],
     ["/dashboard/check-in", "QR Check-in", "scan"],
-    ["/dashboard/notifications", "Announcements", "announce"],
     ["/dashboard/profile", "Profile", "profile"],
   ],
   admin: [
@@ -44,7 +41,6 @@ const MENU = {
     ["/dashboard/tiers", "Class Plans", "plans"],
     ["/dashboard/memberships", "Memberships", "membership"],
     ["/dashboard/audit-trail", "Audit Trail", "audit"],
-    ["/dashboard/notifications", "Notifications", "announce"],
     ["/dashboard/profile", "Profile", "profile"],
   ],
 };
@@ -135,7 +131,6 @@ function DashboardNav({ sidebarOpen, setSidebarOpen }) {
             </button>
             {profileOpen && <div className="profile-dropdown">
               <button onClick={() => nav("/dashboard/profile")}><MenuIcon name="profile" />Profile Settings</button>
-              <button onClick={() => nav("/dashboard/notifications")}><MenuIcon name="announce" />Notifications</button>
               <button className="danger-link" onClick={() => {
                 logout(); nav("/"); toast.info("You have been signed out.");
               }}><MenuIcon name="audit" />Sign out</button>
@@ -162,7 +157,6 @@ function Dashboard() {
             <Suspense fallback={<div className="spinner">Loading scanner…</div>}><CheckInScanner /></Suspense>
           } />}
           <Route path="profile" element={<ProfileSettings />} />
-          <Route path="notifications" element={<Notifications />} />
           {user.role === "admin" && (
             <>
               <Route index element={<AdminDashboard view="overview" />} />

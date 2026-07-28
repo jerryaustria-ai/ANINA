@@ -127,9 +127,6 @@ export default function NotificationBell({ user }) {
           }}>Mark read</span>}
         </button>)}
       </div>
-      <button className="notification-view-all" onClick={() => { setOpen(false); navigate("/dashboard/notifications"); }}>
-        View All Notifications
-      </button>
     </div>}
   </div>;
 }
