@@ -54,11 +54,20 @@ router.get(
 router.patch(
   "/:id/read",
   asyncHandler(async (req, res) => {
-    const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipientId: req.user._id },
-      { $set: { isRead: true } },
+    const readAt = new Date();
+    let notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, recipientId: req.user._id, isRead: false },
+      { $set: { isRead: true, readAt } },
       { new: true }
     );
+    // Marking an already-read notification again must not restart its
+    // 24-hour retention window.
+    if (!notification) {
+      notification = await Notification.findOne({
+        _id: req.params.id,
+        recipientId: req.user._id,
+      });
+    }
     if (!notification) throw new HttpError(404, "Notification not found");
     res.json({ notification: notification.toPublic() });
   })
@@ -67,9 +76,10 @@ router.patch(
 router.post(
   "/read-all",
   asyncHandler(async (req, res) => {
+    const readAt = new Date();
     const result = await Notification.updateMany(
       { recipientId: req.user._id, isRead: false },
-      { $set: { isRead: true } }
+      { $set: { isRead: true, readAt } }
     );
     res.json({ ok: true, updated: result.modifiedCount });
   })

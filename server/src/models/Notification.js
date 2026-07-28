@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema(
     relatedBookingId: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", default: null },
     relatedScheduleId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSession", default: null },
     isRead: { type: Boolean, default: false, index: true },
+    readAt: { type: Date, default: null, index: true },
     dedupeKey: { type: String, required: true, unique: true, index: true },
   },
   { timestamps: true }
@@ -18,6 +19,7 @@ const notificationSchema = new mongoose.Schema(
 
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
 notificationSchema.index({ recipientId: 1, isRead: 1 });
+notificationSchema.index({ isRead: 1, readAt: 1 });
 
 notificationSchema.methods.toPublic = function () {
   return {
@@ -31,6 +33,7 @@ notificationSchema.methods.toPublic = function () {
     relatedBookingId: this.relatedBookingId,
     relatedScheduleId: this.relatedScheduleId,
     isRead: this.isRead,
+    readAt: this.readAt,
     createdAt: this.createdAt,
   };
 };

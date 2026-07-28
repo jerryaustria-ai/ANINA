@@ -20,6 +20,10 @@ import guestCheckoutRoutes from "./routes/guestCheckout.js";
 import checkInRoutes from "./routes/checkIn.js";
 import reportRoutes from "./routes/reports.js";
 import classDefinitionRoutes from "./routes/classDefinitions.js";
+import {
+  cleanupExpiredReadNotifications,
+  startNotificationCleanup,
+} from "./services/notificationCleanup.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -63,7 +67,15 @@ app.use((err, req, res, next) => {
 });
 
 connectDB(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/anina")
-  .then(() => app.listen(PORT, () => console.log(`✓ ANINA API listening on http://localhost:${PORT}`)))
+  .then(async () => {
+    try {
+      await cleanupExpiredReadNotifications();
+    } catch (error) {
+      console.error("Initial notification cleanup failed:", error.message);
+    }
+    startNotificationCleanup();
+    app.listen(PORT, () => console.log(`✓ ANINA API listening on http://localhost:${PORT}`));
+  })
   .catch((err) => {
     console.error("Failed to start:", err.message);
     process.exit(1);
