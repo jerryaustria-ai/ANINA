@@ -40,21 +40,22 @@ router.post(
 async function validate(body, existing = null) {
   const title = String(body.title ?? existing?.title ?? "").trim();
   const type = body.type ?? existing?.type ?? "group";
-  const capacity = type === "private" ? 1 : Number(body.defaultCapacity ?? existing?.defaultCapacity ?? 8);
-  const minimum = type === "private" ? 1 : Number(body.defaultMinToRun ?? existing?.defaultMinToRun ?? 1);
+  const hasRoomValue = Object.prototype.hasOwnProperty.call(body, "defaultRoom");
+  const roomId = hasRoomValue ? body.defaultRoom || null : existing?.defaultRoom || null;
+  let room = null;
+  if (roomId) {
+    room = await Room.findOne({ _id: roomId, active: true });
+    if (!room) throw new HttpError(400, "The selected default room is unavailable.");
+  }
+  const requestedCapacity = Number(body.defaultCapacity ?? existing?.defaultCapacity ?? 8);
+  const capacity = type === "private" ? 1 : room ? room.maxCapacity : requestedCapacity;
+  const requestedMinimum = Number(body.defaultMinToRun ?? existing?.defaultMinToRun ?? 1);
+  const minimum = type === "private" ? 1 : Math.min(requestedMinimum, capacity);
   if (!title) throw new HttpError(400, "Class title is required.");
   if (!["group", "private"].includes(type)) throw new HttpError(400, "Class type is invalid.");
   if (!Number.isInteger(capacity) || capacity < 1) throw new HttpError(400, "Capacity must be greater than zero.");
-  if (!Number.isInteger(minimum) || minimum < 1 || minimum > capacity) {
+  if (!Number.isInteger(requestedMinimum) || requestedMinimum < 1) {
     throw new HttpError(400, "Minimum participants must be between 1 and the class capacity.");
-  }
-  const roomId = body.defaultRoom ?? existing?.defaultRoom ?? null;
-  if (roomId) {
-    const room = await Room.findOne({ _id: roomId, active: true });
-    if (!room) throw new HttpError(400, "The selected default room is unavailable.");
-    if (capacity > room.maxCapacity) {
-      throw new HttpError(400, `Capacity exceeds ${room.name}'s maximum of ${room.maxCapacity}.`);
-    }
   }
   return { title, type, capacity, minimum, roomId };
 }

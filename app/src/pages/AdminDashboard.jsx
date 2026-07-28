@@ -903,22 +903,52 @@ function ClassTitlesView() {
         <div className="field"><label>Description</label><textarea rows="3" value={edit.description}
           onChange={(event) => setEdit({ ...edit, description: event.target.value })} /></div>
         <div className="field row"><div><label>Class type</label><select value={edit.type}
-          onChange={(event) => setEdit({
-            ...edit, type: event.target.value,
-            defaultCapacity: event.target.value === "private" ? 1 : edit.defaultCapacity,
-            defaultMinToRun: event.target.value === "private" ? 1 : edit.defaultMinToRun,
-          })}><option value="group">Group Class</option><option value="private">Private 1:1</option></select></div>
+          onChange={(event) => {
+            const type = event.target.value;
+            const selectedRoom = rooms.find((room) => room.id === edit.defaultRoom);
+            const capacity = type === "private" ? 1 : selectedRoom?.maxCapacity || edit.defaultCapacity;
+            setEdit({
+              ...edit, type,
+              defaultCapacity: capacity,
+              defaultMinToRun: type === "private" ? 1 : Math.min(Number(edit.defaultMinToRun) || 1, capacity),
+            });
+          }}><option value="group">Group Class</option><option value="private">Private 1:1</option></select></div>
           <div><label>Default room</label><select value={edit.defaultRoom || ""}
-            onChange={(event) => setEdit({ ...edit, defaultRoom: event.target.value })}>
+            onChange={(event) => {
+              const defaultRoom = event.target.value;
+              const selectedRoom = rooms.find((room) => room.id === defaultRoom);
+              const capacity = edit.type === "private" ? 1 : selectedRoom?.maxCapacity || edit.defaultCapacity;
+              setEdit({
+                ...edit,
+                defaultRoom,
+                defaultCapacity: capacity,
+                defaultMinToRun: Math.min(Number(edit.defaultMinToRun) || 1, capacity),
+              });
+            }}>
             <option value="">No default room</option>{rooms.map((room) =>
               <option value={room.id} key={room.id}>{room.name} (max {room.maxCapacity})</option>)}
           </select></div></div>
         <div className="field row"><div><label>Maximum capacity</label><input type="number" min="1"
-          disabled={edit.type === "private"} value={edit.defaultCapacity}
-          onChange={(event) => setEdit({ ...edit, defaultCapacity: event.target.value })} /></div>
-          <div><label>Minimum participants</label><input type="number" min="1"
+          disabled={edit.type === "private" || !!edit.defaultRoom} value={edit.defaultCapacity}
+          onChange={(event) => {
+            const capacity = Math.max(1, Number(event.target.value) || 1);
+            setEdit({
+              ...edit,
+              defaultCapacity: event.target.value,
+              defaultMinToRun: Math.min(Number(edit.defaultMinToRun) || 1, capacity),
+            });
+          }} />
+          {!!edit.defaultRoom && edit.type !== "private" &&
+            <small>Automatically set from the selected room.</small>}</div>
+          <div><label>Minimum participants</label><input type="number" min="1" max={edit.defaultCapacity}
             disabled={edit.type === "private"} value={edit.defaultMinToRun}
-            onChange={(event) => setEdit({ ...edit, defaultMinToRun: event.target.value })} /></div></div>
+            onChange={(event) => setEdit({
+              ...edit,
+              defaultMinToRun: Math.min(
+                Math.max(1, Number(event.target.value) || 1),
+                Number(edit.defaultCapacity) || 1
+              ),
+            })} /></div></div>
         {edit.id && <label className="check-line"><input type="checkbox" checked={edit.active}
           onChange={(event) => setEdit({ ...edit, active: event.target.checked })} />Active</label>}
       </div>}
