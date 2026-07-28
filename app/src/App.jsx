@@ -36,7 +36,7 @@ const MENU = {
     ["/dashboard/approvals", "Schedule Approval", "approve"],
     ["/dashboard/check-in", "QR Check-in", "scan"],
     ["/dashboard/people", "People", "people"],
-    ["/dashboard/class-titles", "Class Titles", "classes"],
+    ["/dashboard/class-titles", "Classes", "classes"],
     ["/dashboard/rooms", "Rooms", "rooms"],
     ["/dashboard/tiers", "Class Plans", "plans"],
     ["/dashboard/memberships", "Memberships", "membership"],

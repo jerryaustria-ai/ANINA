@@ -880,8 +880,8 @@ function ClassTitlesView() {
   }
 
   return <div className="page">
-    <div className="page-head"><div><h1>Class Titles</h1>
-      <p>Manage the official classes that Admins and Instructors may schedule.</p></div>
+    <div className="page-head"><div><h1>Classes</h1>
+      <p>Manage the classes available for scheduling.</p></div>
       <div className="page-actions"><button className="btn ghost" onClick={importExisting}>Import Existing Titles</button>
         <button className="btn" onClick={() => setEdit({ ...blankClassTitle })}>+ Create Class Title</button></div></div>
     <div className="grid-cards">{items.map((item) => <article className="card" key={item.id}
