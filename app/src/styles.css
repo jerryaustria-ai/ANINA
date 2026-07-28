@@ -655,3 +655,33 @@ a { color:var(--sage-deep); }
   .record-plan-grid { grid-template-columns:1fr; }
   .record-grid { grid-template-columns:1fr 1fr; }
 }
+
+/* Admin workflow overview and reporting */
+.overview-metrics { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:.8rem; margin-bottom:1rem; }
+.overview-metrics article,.overview-panel { border:1px solid var(--line); border-radius:12px; background:var(--paper); }
+.overview-metrics article { padding:1rem; display:grid; gap:.4rem; }
+.overview-metrics article span { color:var(--ink-soft); font-size:.75rem; }
+.overview-metrics article strong { font:400 2rem var(--serif); }
+.overview-panel { padding:1rem; margin-top:1rem; }
+.overview-panel h2 { margin:0 0 .8rem; font-size:1.25rem; }
+.overview-upcoming { display:grid; gap:.5rem; }
+.overview-upcoming>div { display:grid; grid-template-columns:minmax(160px,1fr) minmax(220px,1.5fr) minmax(180px,1fr);
+  gap:1rem; padding:.7rem 0; border-bottom:1px solid var(--line); font-size:.78rem; }
+.report-filters { display:flex; align-items:end; gap:.6rem; flex-wrap:wrap; }
+.report-filters label { display:grid; gap:.25rem; color:var(--ink-soft); font-size:.7rem; }
+.report-table-wrap { overflow:auto; margin-top:1rem; }
+.report-table td small { display:block; color:var(--ink-soft); }
+.weekday-picker { display:flex; flex-wrap:wrap; gap:.35rem; margin:.35rem 0 .7rem; }
+.weekday-picker label { border:1px solid var(--line); border-radius:999px; padding:.35rem .55rem; font-size:.72rem; }
+.check-line { display:flex!important; align-items:center; gap:.5rem; }
+.session-notes-form { border-block:1px solid var(--line); margin-top:1rem; padding:1rem 0; }
+
+@media (max-width:900px) {
+  .overview-metrics { grid-template-columns:repeat(2,minmax(140px,1fr)); }
+  .overview-upcoming>div { grid-template-columns:1fr; gap:.2rem; }
+}
+@media print {
+  .app-nav,.page-head,.overview-metrics,.overview-upcoming,.report-filters { display:none!important; }
+  .overview-panel { border:0; padding:0; }
+  .report-table-wrap { overflow:visible; }
+}

@@ -41,6 +41,9 @@ const classSessionSchema = new mongoose.Schema(
     acceptedCount: { type: Number, default: 0, min: 0 },
 
     notes: { type: String, default: "" },
+    sessionNotes: { type: String, default: "" },
+    progressNotes: { type: String, default: "" },
+    recurrenceGroupId: { type: String, default: "", index: true },
     color: { type: String, default: "" }, // falls back to room colour on the client
     cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     cancelledByRole: { type: String, enum: ["admin", "instructor", "client"], default: null },
@@ -78,6 +81,9 @@ classSessionSchema.methods.toPublic = function () {
     acceptedCount: this.acceptedCount,
     seatsLeft: Math.max(0, this.capacity - this.acceptedCount),
     notes: this.notes,
+    sessionNotes: this.sessionNotes,
+    progressNotes: this.progressNotes,
+    recurrenceGroupId: this.recurrenceGroupId,
     color: this.color || (rm && rm.color) || "",
     cancelledBy: this.cancelledBy,
     cancelledByRole: this.cancelledByRole,

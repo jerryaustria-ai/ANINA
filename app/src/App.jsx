@@ -22,7 +22,7 @@ function Nav() {
   const tabs = {
     client: [["/dashboard", "My Bookings"], ["/dashboard/membership", "My Memberships"]],
     instructor: [["/dashboard", "My Classes"], ["/dashboard/check-in", "QR Check-in"]],
-    admin: [["/dashboard", "Studio Schedule"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
+    admin: [["/dashboard", "Overview"], ["/dashboard/schedule", "Studio Schedule"], ["/dashboard/check-in", "QR Check-in"], ["/dashboard/approvals", "Schedule Approval"], ["/dashboard/audit-trail", "Audit Trail"], ["/dashboard/rooms", "Rooms"], ["/dashboard/people", "People"], ["/dashboard/tiers", "Class Plans"], ["/dashboard/memberships", "Memberships"]],
   }[user.role] || [];
 
   return (
@@ -61,7 +61,8 @@ function Dashboard() {
         } />}
         {user.role === "admin" && (
           <>
-            <Route index element={<AdminDashboard view="schedule" />} />
+            <Route index element={<AdminDashboard view="overview" />} />
+            <Route path="schedule" element={<AdminDashboard view="schedule" />} />
             <Route path="approvals" element={<AdminDashboard view="approvals" />} />
             <Route path="audit-trail" element={<AdminDashboard view="audit" />} />
             <Route path="rooms" element={<AdminDashboard view="rooms" />} />

@@ -131,6 +131,21 @@ export default function InstructorDashboard() {
     catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
   }
+  async function saveSessionNotes() {
+    setBusy(true);
+    try {
+      await api(`/sessions/${s.id}/session-notes`, {
+        method: "PATCH",
+        body: {
+          sessionNotes: s.sessionNotes || "",
+          progressNotes: s.progressNotes || "",
+        },
+      });
+      await refreshManage();
+      toast.success("Session and client progress notes saved.");
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
 
   const s = manage?.session;
   const metMin = s && s.acceptedCount >= s.minToRun;
@@ -216,6 +231,22 @@ export default function InstructorDashboard() {
               <span className={"status-tag " + (classEnded ? "completed" : s.status)}>{classEnded ? "Completed" : STATUS_LABEL[s.status]}</span>
             </div>
             {metMin && s.status === "published" && <p className="meta-line">This class has reached its minimum client count.</p>}
+
+            <div className="session-notes-form">
+              <div className="field"><label>Session notes</label>
+                <textarea rows="3" value={s.sessionNotes || ""}
+                  onChange={(event) => setManage({
+                    ...manage, session: { ...s, sessionNotes: event.target.value },
+                  })}
+                  placeholder="Operational notes for this class…" /></div>
+              <div className="field"><label>Client progress notes / recommendations</label>
+                <textarea rows="3" value={s.progressNotes || ""}
+                  onChange={(event) => setManage({
+                    ...manage, session: { ...s, progressNotes: event.target.value },
+                  })}
+                  placeholder="Progress observations or recommendations…" /></div>
+              <button className="btn ghost sm" onClick={saveSessionNotes} disabled={busy}>Save notes</button>
+            </div>
 
             <h4 style={{ fontFamily: "var(--sans)", marginTop: "1rem", color: "var(--ink-mute)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bookings</h4>
             {manage.bookings.length === 0 ? <div className="empty">No bookings yet.</div> : (

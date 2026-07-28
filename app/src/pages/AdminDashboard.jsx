@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api.js";
+import { api, downloadApi } from "../api.js";
 import CalendarView from "../components/CalendarView.jsx";
 import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
@@ -10,6 +10,7 @@ import { toast } from "react-toastify";
 import { Link } from "react-router-dom";
 
 export default function AdminDashboard({ view }) {
+  if (view === "overview") return <OverviewView />;
   if (view === "rooms") return <RoomsView />;
   if (view === "approvals") return <ScheduleApprovalView />;
   if (view === "audit") return <AuditTrailView />;
@@ -17,6 +18,96 @@ export default function AdminDashboard({ view }) {
   if (view === "tiers") return <TiersView />;
   if (view === "memberships") return <MembershipsView />;
   return <ScheduleView />;
+}
+
+function OverviewView() {
+  const [data, setData] = useState(null);
+  const [filters, setFilters] = useState({ from: "", to: "", status: "" });
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api("/reports/overview").then(setData).catch((error) => toast.error(error.message));
+  }, []);
+
+  async function loadReport(event) {
+    event?.preventDefault();
+    setBusy(true);
+    try {
+      const query = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => value && query.set(key, value));
+      const result = await api(`/reports/bookings?${query}`);
+      setRows(result.rows);
+    } catch (error) { toast.error(error.message); }
+    finally { setBusy(false); }
+  }
+
+  async function exportReport(format) {
+    try {
+      const query = new URLSearchParams({ format });
+      Object.entries(filters).forEach(([key, value]) => value && query.set(key, value));
+      await downloadApi(`/reports/bookings/export?${query}`,
+        `anina-bookings.${format === "excel" ? "xls" : "csv"}`);
+      toast.success(`${format === "excel" ? "Excel" : "CSV"} report downloaded.`);
+    } catch (error) { toast.error(error.message); }
+  }
+
+  const cards = data ? [
+    ["Total bookings", data.metrics.totalBookings],
+    ["Today's bookings", data.metrics.todayBookings],
+    ["Upcoming bookings", data.metrics.upcomingBookings],
+    ["Completed bookings", data.metrics.completedBookings],
+    ["Cancelled bookings", data.metrics.cancelledBookings],
+    ["Available instructors", data.metrics.availableInstructors],
+    ["Total clients", data.metrics.totalClients],
+  ] : [];
+
+  return <div className="page overview-page">
+    <div className="page-head"><div><h1>Admin Dashboard</h1>
+      <p>Studio activity, upcoming schedules, and operational reports.</p></div></div>
+    <section className="overview-metrics">
+      {cards.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}
+      {!data && <div className="empty">Loading dashboard…</div>}
+    </section>
+    <section className="overview-panel">
+      <h2>Upcoming schedules</h2>
+      {!data?.upcomingSessions?.length ? <div className="empty">No upcoming schedules.</div> :
+        <div className="overview-upcoming">{data.upcomingSessions.map((session) => <div key={session.id}>
+          <strong>{session.title}</strong><span>{fmtRange(session.startAt, session.endAt)}</span>
+          <span>{session.instructor?.name} · {session.room?.name}</span>
+        </div>)}</div>}
+    </section>
+    <section className="overview-panel">
+      <h2>Booking reports</h2>
+      <form className="report-filters" onSubmit={loadReport}>
+        <label>From<input type="date" value={filters.from}
+          onChange={(event) => setFilters({ ...filters, from: event.target.value })} /></label>
+        <label>To<input type="date" value={filters.to}
+          onChange={(event) => setFilters({ ...filters, to: event.target.value })} /></label>
+        <label>Status<select value={filters.status}
+          onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
+          <option value="">All statuses</option>
+          {["pending", "accepted", "waitlisted", "cancelled", "attended", "no_show"].map((status) =>
+            <option value={status} key={status}>{STATUS_LABEL[status] || status}</option>)}
+        </select></label>
+        <button className="btn" disabled={busy}>Generate</button>
+        <button className="btn ghost" type="button" onClick={() => exportReport("csv")}>Export CSV</button>
+        <button className="btn ghost" type="button" onClick={() => exportReport("excel")}>Export Excel</button>
+        <button className="btn ghost" type="button" onClick={() => window.print()}>Print / Save PDF</button>
+      </form>
+      {rows.length > 0 && <div className="report-table-wrap"><table className="data-table report-table">
+        <thead><tr><th>Client</th><th>Service</th><th>Instructor</th><th>Schedule</th>
+          <th>Booking</th><th>Attendance</th><th>Payment</th></tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.reference}>
+          <td><strong>{row.client}</strong><small>{row.email}</small></td>
+          <td>{row.service}</td><td>{row.instructor}</td>
+          <td>{fmtRange(row.start, row.end)}</td>
+          <td>{STATUS_LABEL[row.bookingStatus] || row.bookingStatus}</td>
+          <td>{STATUS_LABEL[row.attendance] || row.attendance}</td><td>{row.payment}</td>
+        </tr>)}</tbody>
+      </table></div>}
+    </section>
+  </div>;
 }
 
 /* ---------- Read-only system audit trail ---------- */
@@ -240,6 +331,7 @@ function ScheduleView() {
       title: "", type: "group", instructor: instructors[0]?.id || "", room: rooms[0]?.id || "",
       startAt: toLocalInput(start), endAt: toLocalInput(end), capacity: 1, minToRun: 1,
       notes: "", status: "published", clientIds: [],
+      recurring: false, weekdays: [], until: "",
     });
   }
 
@@ -277,10 +369,18 @@ function ScheduleView() {
         await api(`/sessions/${edit.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
         toast.success(`Schedule updated with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
       } else {
-        const { session } = await api("/sessions", { method: "POST", body });
-        createdId = session.id;
-        await api(`/sessions/${session.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
-        toast.success(`Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
+        if (edit.recurring) {
+          const result = await api("/sessions/recurring", {
+            method: "POST",
+            body: { ...body, weekdays: edit.weekdays, until: edit.until },
+          });
+          toast.success(`${result.count} recurring schedules created.`);
+        } else {
+          const { session } = await api("/sessions", { method: "POST", body });
+          createdId = session.id;
+          await api(`/sessions/${session.id}/clients`, { method: "PUT", body: { clientIds: edit.clientIds } });
+          toast.success(`Schedule created with ${edit.clientIds.length} assigned client${edit.clientIds.length === 1 ? "" : "s"}.`);
+        }
       }
       setEdit(null); await load();
     } catch (e) {
@@ -545,6 +645,21 @@ function ScheduleView() {
           <div className="field"><label>Assigned clients</label>
             <ClientMultiSelect clients={clients} value={edit.clientIds} capacity={Number(edit.capacity)}
               onChange={(clientIds) => setEdit({ ...edit, clientIds })} /></div>
+          {!edit.id && <div className="field recurring-fields">
+            <label className="check-line"><input type="checkbox" checked={edit.recurring}
+              onChange={(event) => setEdit({ ...edit, recurring: event.target.checked, clientIds: [] })} />
+              Create a recurring weekly schedule</label>
+            {edit.recurring && <>
+              <label>Repeat on</label>
+              <div className="weekday-picker">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) =>
+                <label key={day}><input type="checkbox" checked={edit.weekdays.includes(index)}
+                  onChange={() => setEdit({ ...edit, weekdays: edit.weekdays.includes(index)
+                    ? edit.weekdays.filter((value) => value !== index) : [...edit.weekdays, index] })} />{day}</label>)}</div>
+              <label>Repeat until<input type="date" min={edit.startAt.slice(0, 10)} value={edit.until}
+                onChange={(event) => setEdit({ ...edit, until: event.target.value })} /></label>
+              <p className="meta-line">Recurring schedules are created without client assignments. Clients can be added to each occurrence afterward.</p>
+            </>}
+          </div>}
           <div className="field"><label>Notes</label><textarea rows="2" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
         </div>}
       </Modal>

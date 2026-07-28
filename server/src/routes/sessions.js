@@ -15,6 +15,7 @@ import { SessionAudit } from "../models/SessionAudit.js";
 import { createAuditLog } from "../services/audit.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
+import { randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -409,6 +410,98 @@ router.post(
   })
 );
 
+// POST /api/sessions/recurring — create a weekly series. Instructor-created
+// occurrences remain unpublished until each occurrence is reviewed by Admin.
+router.post(
+  "/recurring",
+  requireRole("instructor", "admin"),
+  asyncHandler(async (req, res) => {
+    const {
+      title, type = "group", room, startAt, endAt, capacity, minToRun = 1,
+      notes = "", color = "", weekdays = [], until, instructor: requestedInstructor,
+    } = req.body || {};
+    const instructorId = req.user.role === "admin" && requestedInstructor
+      ? requestedInstructor : req.user._id;
+    if (!title || !room || !startAt || !endAt || !capacity || !until) {
+      throw new HttpError(400, "Recurring schedules require title, room, start, end, capacity, and end date.");
+    }
+    const selectedDays = [...new Set(weekdays.map(Number))];
+    if (!selectedDays.length || selectedDays.some((day) => day < 0 || day > 6)) {
+      throw new HttpError(400, "Select at least one valid weekday.");
+    }
+    if (!SESSION_TYPES.includes(type)) throw new HttpError(400, "Invalid session type");
+    const firstStart = new Date(startAt);
+    const firstEnd = new Date(endAt);
+    const lastDate = new Date(until);
+    lastDate.setHours(23, 59, 59, 999);
+    if (Number.isNaN(lastDate.getTime()) || lastDate < firstStart) {
+      throw new HttpError(400, "The recurring end date must be on or after the first schedule date.");
+    }
+    if (lastDate.getTime() - firstStart.getTime() > 366 * 24 * 60 * 60 * 1000) {
+      throw new HttpError(400, "A recurring schedule series cannot exceed one year.");
+    }
+    const duration = firstEnd.getTime() - firstStart.getTime();
+    if (duration <= 0) throw new HttpError(400, "End time must be after start time");
+    const cap = type === "private" ? 1 : Number(capacity);
+    const min = type === "private" ? 1 : Number(minToRun);
+    if (min > cap) throw new HttpError(400, "minToRun cannot exceed capacity");
+
+    const occurrences = [];
+    const cursor = new Date(firstStart);
+    cursor.setHours(firstStart.getHours(), firstStart.getMinutes(), 0, 0);
+    while (cursor <= lastDate) {
+      if (cursor >= firstStart && selectedDays.includes(cursor.getDay())) {
+        occurrences.push({ start: new Date(cursor), end: new Date(cursor.getTime() + duration) });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    if (!occurrences.length) throw new HttpError(400, "The selected recurrence does not create any schedules.");
+    if (occurrences.length > 160) throw new HttpError(400, "This recurring series creates too many schedules.");
+
+    for (const occurrence of occurrences) {
+      await validateSlot({
+        roomId: room, startAt: occurrence.start, endAt: occurrence.end,
+        capacity: cap, instructorId, enforceNotPast: true,
+      });
+    }
+    const instructorSubmission = req.user.role === "instructor";
+    const now = new Date();
+    const recurrenceGroupId = randomUUID();
+    const created = await ClassSession.insertMany(occurrences.map((occurrence) => ({
+      title, type, instructor: instructorId, room,
+      startAt: occurrence.start, endAt: occurrence.end,
+      capacity: cap, minToRun: min, notes, color, recurrenceGroupId,
+      status: instructorSubmission ? "pending_approval" : "published",
+      isPublished: !instructorSubmission,
+      submittedAt: instructorSubmission ? now : null,
+      approvedBy: instructorSubmission ? null : req.user._id,
+      approvedAt: instructorSubmission ? null : now,
+    })));
+    await Promise.all(created.map((session) => createAuditLog({
+      actor: req.user, action: "RECURRING_SCHEDULE_CREATED",
+      description: `Created recurring occurrence ${session.title} on ${session.startAt.toISOString()}.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      updatedValue: session,
+    })));
+    if (instructorSubmission) {
+      await notifyAdmins({
+        type: "SCHEDULE_SUBMITTED_FOR_APPROVAL",
+        title: "Recurring Schedule Awaiting Approval",
+        message: `${req.user.name} submitted ${created.length} ${title} schedules for approval.`,
+        relatedUserId: req.user._id,
+        relatedScheduleId: created[0]._id,
+        eventKey: `recurring-submitted:${recurrenceGroupId}`,
+      });
+    }
+    res.status(201).json({
+      recurrenceGroupId,
+      count: created.length,
+      sessions: (await populate(ClassSession.find({ recurrenceGroupId }).sort("startAt")))
+        .map((session) => session.toPublic()),
+    });
+  })
+);
+
 router.get(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -423,6 +516,39 @@ router.get(
       throw new HttpError(403, "You cannot access another Instructor's unpublished schedule.");
     }
     res.json({ session: session.toPublic() });
+  })
+);
+
+// Instructors may add operational notes without changing the approved schedule.
+router.patch(
+  "/:id/session-notes",
+  requireRole("instructor", "admin"),
+  asyncHandler(async (req, res) => {
+    const session = await ClassSession.findById(req.params.id);
+    if (!session) throw new HttpError(404, "Session not found");
+    if (!ownsOrAdmin(req, session)) throw new HttpError(403, "Not your session");
+    const previous = {
+      sessionNotes: session.sessionNotes,
+      progressNotes: session.progressNotes,
+    };
+    if (req.body?.sessionNotes !== undefined) {
+      session.sessionNotes = String(req.body.sessionNotes).trim().slice(0, 5000);
+    }
+    if (req.body?.progressNotes !== undefined) {
+      session.progressNotes = String(req.body.progressNotes).trim().slice(0, 5000);
+    }
+    await session.save();
+    await createAuditLog({
+      actor: req.user, action: "SESSION_NOTES_UPDATED",
+      description: `Updated session notes for ${session.title}.`,
+      entityType: "schedule", entityId: session._id, entityLabel: session.title,
+      previousValue: previous,
+      updatedValue: {
+        sessionNotes: session.sessionNotes,
+        progressNotes: session.progressNotes,
+      },
+    });
+    res.json({ session: (await populate(ClassSession.findById(session._id))).toPublic() });
   })
 );
 

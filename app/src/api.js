@@ -11,6 +11,24 @@ export function getToken() {
   return token;
 }
 
+export async function downloadApi(path, filename) {
+  const res = await fetch(BASE + path, {
+    headers: token ? { Authorization: "Bearer " + token } : {},
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed (${res.status})`);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function notifyScheduleChanged(path, method) {
   if (method === "GET" ||
       (!path.startsWith("/sessions") && !path.startsWith("/bookings") && !path.startsWith("/check-in"))) return;
