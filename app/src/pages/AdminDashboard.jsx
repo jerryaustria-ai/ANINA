@@ -878,6 +878,13 @@ function ClassTitlesView() {
         : "All existing class titles are already available.");
     } catch (error) { toast.error(error.message); }
   }
+  const maximumCapacity = Number(edit?.defaultCapacity);
+  const minimumParticipants = Number(edit?.defaultMinToRun);
+  const minimumIsValid = edit?.type === "private" || (
+    Number.isInteger(minimumParticipants) &&
+    minimumParticipants >= 1 &&
+    minimumParticipants <= maximumCapacity
+  );
 
   return <div className="page">
     <div className="page-head"><div><h1>Classes</h1>
@@ -896,7 +903,8 @@ function ClassTitlesView() {
     </article>)}</div>
     <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit Class Title" : "Create Class Title"}
       footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
-        <button className="btn" onClick={save} disabled={busy || !edit?.title}>Save</button></>}>
+        <button className="btn" onClick={save}
+          disabled={busy || !edit?.title.trim() || !minimumIsValid}>Save</button></>}>
       {edit && <div>
         <div className="field"><label>Class title</label><input value={edit.title}
           onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></div>
@@ -942,13 +950,11 @@ function ClassTitlesView() {
             <small>Automatically set from the selected room.</small>}</div>
           <div><label>Minimum participants</label><input type="number" min="1" max={edit.defaultCapacity}
             disabled={edit.type === "private"} value={edit.defaultMinToRun}
-            onChange={(event) => setEdit({
-              ...edit,
-              defaultMinToRun: Math.min(
-                Math.max(1, Number(event.target.value) || 1),
-                Number(edit.defaultCapacity) || 1
-              ),
-            })} /></div></div>
+            aria-invalid={!minimumIsValid}
+            onChange={(event) => setEdit({ ...edit, defaultMinToRun: event.target.value })} />
+            {!minimumIsValid && <small className="field-error">
+              Minimum Participants must be between 1 and Maximum Capacity ({edit.defaultCapacity}).
+            </small>}</div></div>
         {edit.id && <label className="check-line"><input type="checkbox" checked={edit.active}
           onChange={(event) => setEdit({ ...edit, active: event.target.checked })} />Active</label>}
       </div>}

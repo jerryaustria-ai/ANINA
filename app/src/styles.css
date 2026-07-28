@@ -763,6 +763,8 @@ a { color:var(--sage-deep); }
 .profile-form { width:min(640px,100%); }
 .profile-form>.picture-picker { margin-bottom:1.2rem; }
 .field small { display:block; margin-top:.25rem; color:var(--ink-soft); font-size:.68rem; }
+.field small.field-error { color:#a6463c; }
+.field input[aria-invalid="true"] { border-color:#b4685e; }
 .schedule-list { display:grid; }
 .schedule-list-item { display:grid; grid-template-columns:6px minmax(220px,1.3fr) minmax(180px,1fr) auto;
   gap:1rem; align-items:center; border:0; border-bottom:1px solid var(--line); background:var(--paper);
