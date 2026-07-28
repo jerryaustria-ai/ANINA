@@ -8,7 +8,6 @@ import { claimSeat, releaseSeat } from "../services/capacity.js";
 import {
   consumeReservedCredit,
   findEligibleMembership,
-  membershipAllowsClass,
   reserveMembershipCredit,
   returnMembershipCredit,
 } from "../services/membership.js";
@@ -18,7 +17,6 @@ import { createNotification, notifyAdmins } from "../services/notifications.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
-import { Membership } from "../models/Membership.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 
 const router = Router();
@@ -115,6 +113,10 @@ async function loadRescheduleContext(req) {
   if (req.user.role === "client" && String(booking.client) !== String(req.user._id)) {
     throw new HttpError(403, "You can only reschedule your own booking.");
   }
+  if (req.user.role === "instructor" &&
+      String(booking.session.instructor) !== String(req.user._id)) {
+    throw new HttpError(403, "You can only reschedule bookings assigned to your classes.");
+  }
   if (!["pending", "accepted", "waitlisted"].includes(booking.status)) {
     throw new HttpError(409, "This booking can no longer be rescheduled.");
   }
@@ -146,6 +148,54 @@ function validateReplacementSchedule({ booking, membership, target, now = new Da
   if (target.acceptedCount >= target.capacity) {
     throw new HttpError(409, "The replacement schedule is already full.");
   }
+}
+
+async function transferBooking({ booking, target, req }) {
+  await validateClientSlot({
+    clientId: booking.client,
+    session: target,
+    excludeBookingId: booking._id,
+  });
+  const duplicate = await Booking.findOne({
+    session: target._id,
+    client: booking.client,
+    _id: { $ne: booking._id },
+  });
+  if (duplicate) throw new HttpError(409, "The client already has a booking record for the replacement schedule.");
+
+  const previous = booking.toObject({ depopulate: true });
+  const previousSession = booking.session;
+  const wasAccepted = booking.status === "accepted";
+  if (wasAccepted) {
+    const seat = await claimSeat(target._id);
+    if (!seat) throw new HttpError(409, "The replacement schedule is already full.");
+  }
+  try {
+    booking.session = target._id;
+    booking.status = wasAccepted ? "accepted" : "pending";
+    if (req.body.note !== undefined) booking.note = req.body.note;
+    await booking.save();
+  } catch (error) {
+    if (wasAccepted) await releaseSeat(target._id);
+    throw error;
+  }
+  if (wasAccepted) await releaseSeat(previousSession._id);
+  await recordBookingAudit({
+    booking,
+    session: target,
+    actor: req.user,
+    action: "BOOKING_RESCHEDULED",
+    description: `Rescheduled a booking from ${previousSession.title} to ${target.title}.`,
+    previousValue: previous,
+  });
+  await announceBooking(booking, target, req.user._id, "rescheduled");
+  const result = await Booking.findById(booking._id)
+    .populate("client", "name email picture phone")
+    .populate({ path: "session", populate: [
+      { path: "instructor", select: "name email picture" },
+      { path: "room", select: "name color location" },
+    ] });
+  return result;
 }
 
 async function validateClientSlot({ clientId, session, excludeBookingId }) {
@@ -354,7 +404,7 @@ router.post(
 // the same purchased plan credit.
 router.get(
   "/:id/reschedule-options",
-  requireRole("client", "admin"),
+  requireRole("client", "instructor", "admin"),
   asyncHandler(async (req, res) => {
     const { booking, membership, now } = await loadRescheduleContext(req);
     const validFrom = membership.createdAt && new Date(membership.createdAt) > now
@@ -406,7 +456,7 @@ router.get(
 
 router.post(
   "/:id/reschedule",
-  requireRole("client", "admin"),
+  requireRole("client", "instructor", "admin"),
   asyncHandler(async (req, res) => {
     const { booking, membership } = await loadRescheduleContext(req);
     const targetId = req.body?.sessionId;
@@ -417,49 +467,7 @@ router.post(
     const target = await ClassSession.findById(targetId);
     if (!target) throw new HttpError(404, "Replacement schedule not found");
     validateReplacementSchedule({ booking, membership, target });
-    await validateClientSlot({
-      clientId: booking.client,
-      session: target,
-      excludeBookingId: booking._id,
-    });
-    const duplicate = await Booking.findOne({
-      session: target._id,
-      client: booking.client,
-      _id: { $ne: booking._id },
-    });
-    if (duplicate) throw new HttpError(409, "You already have a booking record for the replacement schedule.");
-
-    const previous = booking.toObject({ depopulate: true });
-    const previousSession = booking.session;
-    const wasAccepted = booking.status === "accepted";
-    if (wasAccepted) {
-      const seat = await claimSeat(target._id);
-      if (!seat) throw new HttpError(409, "The replacement schedule is already full.");
-    }
-    try {
-      booking.session = target._id;
-      booking.status = wasAccepted ? "accepted" : "pending";
-      if (req.body.note !== undefined) booking.note = req.body.note;
-      await booking.save();
-    } catch (error) {
-      if (wasAccepted) await releaseSeat(target._id);
-      throw error;
-    }
-    if (wasAccepted) await releaseSeat(previousSession._id);
-    await recordBookingAudit({
-      booking,
-      session: target,
-      actor: req.user,
-      action: "BOOKING_RESCHEDULED",
-      description: `Rescheduled a booking from ${previousSession.title} to ${target.title}.`,
-      previousValue: previous,
-    });
-    await announceBooking(booking, target, req.user._id, "rescheduled");
-    const result = await Booking.findById(booking._id)
-      .populate({ path: "session", populate: [
-        { path: "instructor", select: "name email picture" },
-        { path: "room", select: "name color location" },
-      ] });
+    const result = await transferBooking({ booking, target, req });
     res.json({ booking: result.toPublic(), rescheduled: true });
   })
 );
@@ -469,73 +477,17 @@ router.patch(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const booking = await Booking.findById(req.params.id).populate("session");
-    if (!booking) throw new HttpError(404, "Booking not found");
+    const { booking, membership } = await loadRescheduleContext(req);
     const targetId = req.body?.sessionId;
     if (!targetId) throw new HttpError(400, "sessionId is required");
-    if (targetId === booking.session._id.toString()) return res.json({ booking: booking.toPublic() });
-    const previous = booking.toObject({ depopulate: true });
-    const previousSessionTitle = booking.session.title;
-
+    if (String(targetId) === String(booking.session._id)) {
+      throw new HttpError(409, "Please select a different schedule.");
+    }
     const target = await ClassSession.findById(targetId);
-    if (!target) throw new HttpError(404, "Target schedule not found");
-    assertScheduleBookable(target);
-    await validateClientSlot({ clientId: booking.client, session: target, excludeBookingId: booking._id });
-    const duplicate = await Booking.findOne({ session: target._id, client: booking.client, _id: { $ne: booking._id } });
-    if (duplicate) throw new HttpError(409, "Client already has a booking record for the target schedule");
-
-    const wasAccepted = booking.status === "accepted";
-    let replacementMembership = null;
-    let replacementCreditReserved = false;
-    let currentMembership = null;
-    if (wasAccepted && booking.creditStatus === "reserved" && booking.membership) {
-      currentMembership = await Membership.findById(booking.membership);
-      if (!currentMembership || !membershipAllowsClass(currentMembership, target.title)) {
-        replacementMembership = await findEligibleMembership(booking.client, target.title);
-        if (!replacementMembership) {
-          throw new HttpError(402, "The client does not have an active plan that covers the target class.");
-        }
-      }
-    }
-    if (wasAccepted) {
-      const seat = await claimSeat(target._id);
-      if (!seat) throw new HttpError(409, "Target schedule is already full");
-      if (replacementMembership) {
-        const reserved = await reserveMembershipCredit(replacementMembership._id);
-        if (!reserved) {
-          await releaseSeat(target._id);
-          throw new HttpError(409, "The client's target plan no longer has an available credit.");
-        }
-        replacementCreditReserved = true;
-      }
-    }
-    const oldSessionId = booking.session._id;
-    try {
-      booking.session = target._id;
-      booking.status = wasAccepted ? "accepted" : "pending";
-      if (replacementMembership) {
-        booking.membership = replacementMembership._id;
-        booking.creditStatus = "reserved";
-      }
-      if (req.body.note !== undefined) booking.note = req.body.note;
-      await booking.save();
-      await recordBookingAudit({
-        booking, session: target, actor: req.user, action: "BOOKING_RESCHEDULED",
-        description: `Rescheduled a booking from ${previousSessionTitle} to ${target.title}.`,
-        previousValue: previous,
-      });
-      if (wasAccepted) await releaseSeat(oldSessionId);
-      if (replacementMembership && currentMembership) await returnMembershipCredit(currentMembership._id);
-      await announceBooking(booking, target, req.user._id, wasAccepted ? "approved" : "requested");
-      const result = await Booking.findById(booking._id)
-        .populate("client", "name email picture phone")
-        .populate({ path: "session", populate: [{ path: "instructor", select: "name email picture" }, { path: "room", select: "name color location" }] });
-      res.json({ booking: result.toPublic(), rescheduled: true });
-    } catch (error) {
-      if (wasAccepted) await releaseSeat(target._id);
-      if (replacementCreditReserved) await returnMembershipCredit(replacementMembership._id);
-      throw error;
-    }
+    if (!target) throw new HttpError(404, "Replacement schedule not found");
+    validateReplacementSchedule({ booking, membership, target });
+    const result = await transferBooking({ booking, target, req });
+    res.json({ booking: result.toPublic(), rescheduled: true });
   })
 );
 

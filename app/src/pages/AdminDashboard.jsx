@@ -314,8 +314,6 @@ function ScheduleView() {
 
   const clients = users.filter((user) => user.role === "client" && user.active);
   const instructors = users.filter((user) => user.role === "instructor" && user.active);
-  const activeSessions = sessions.filter((session) =>
-    session.status === "published" && session.isPublished && new Date(session.startAt) > new Date());
   const allSelectedBookings = sel ? bookings.filter((booking) => booking.session?.id === sel.id) : [];
   const selectedBookings = allSelectedBookings.filter((booking) =>
     ["pending", "accepted", "present", "waitlisted"].includes(booking.status));
@@ -442,11 +440,30 @@ function ScheduleView() {
   async function moveBooking() {
     setBusy(true);
     try {
-      await api(`/bookings/${reschedule.booking.id}`, { method: "PATCH", body: { sessionId: reschedule.sessionId } });
+      await api(`/bookings/${reschedule.booking.id}/reschedule`, {
+        method: "POST", body: { sessionId: reschedule.sessionId },
+      });
       setReschedule(null); await load();
       toast.success("Booking rescheduled.");
-    } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
+    } catch (e) {
+      e.status === 409 ? toast.warning(e.message) : toast.error(e.message);
+      await openBookingReschedule(reschedule.booking);
+    }
     finally { setBusy(false); }
+  }
+
+  async function openBookingReschedule(booking) {
+    setReschedule({ booking, sessionId: "", schedules: [], loading: true, error: "" });
+    try {
+      const result = await api(`/bookings/${booking.id}/reschedule-options`);
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, schedules: result.schedules, validity: result.validity, loading: false }
+        : current);
+    } catch (error) {
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, loading: false, error: error.message }
+        : current);
+    }
   }
 
   async function cancelSchedule(session) {
@@ -612,7 +629,7 @@ function ScheduleView() {
                   </span></div>
                   <div className="schedule-booking-actions">
                     {!selectedClassEnded && !["cancelled", "declined"].includes(booking.status) &&
-                      <button className="btn ghost sm" onClick={() => setReschedule({ booking, sessionId: "" })}>Reschedule</button>}
+                      <button className="btn ghost sm" onClick={() => openBookingReschedule(booking)}>Reschedule</button>}
                     {!selectedClassEnded && ["pending", "accepted", "waitlisted"].includes(booking.status) &&
                       <button className="btn danger sm" onClick={() => cancelBooking(booking)} disabled={busy}>Cancel</button>}
                     {selectedClassStarted && ["accepted", "present", "fully_used", "attended", "no_show"].includes(booking.status) && <>
@@ -725,9 +742,15 @@ function ScheduleView() {
         footer={<><button className="btn ghost" onClick={() => setReschedule(null)}>Close</button>
           <button className="btn" onClick={moveBooking} disabled={busy || !reschedule?.sessionId}>Confirm reschedule</button></>}>
         {reschedule && <div><p className="meta-line">Client: <strong>{reschedule.booking.client?.name}</strong><br />Current: {reschedule.booking.session?.title} — {fmtRange(reschedule.booking.session?.startAt, reschedule.booking.session?.endAt)}</p>
-          <div className="field"><label>New available schedule</label><select value={reschedule.sessionId} onChange={(e) => setReschedule({ ...reschedule, sessionId: e.target.value })}>
-            <option value="">Select schedule</option>{activeSessions.filter((session) => session.id !== reschedule.booking.session?.id).map((session) =>
-              <option value={session.id} key={session.id}>{session.title} — {fmtRange(session.startAt, session.endAt)} — {session.instructor?.name}</option>)}</select></div></div>}
+          {reschedule.loading ? <div className="empty">Checking eligible schedules…</div>
+            : reschedule.error ? <div className="status-notice error">{reschedule.error}</div>
+              : reschedule.schedules.length === 0
+                ? <div className="empty">No available schedules for this class are within your plan validity period.</div>
+                : <div className="field"><label>Eligible replacement schedule</label>
+                  <select value={reschedule.sessionId} onChange={(e) => setReschedule({ ...reschedule, sessionId: e.target.value })}>
+                    <option value="">Select schedule</option>{reschedule.schedules.map((session) =>
+                      <option value={session.id} key={session.id}>{session.title} — {fmtRange(session.startAt, session.endAt)} — {session.instructor?.name} — {session.seatsLeft} slot{session.seatsLeft === 1 ? "" : "s"} left</option>)}
+                  </select></div>}</div>}
       </Modal>
     </div>
   );

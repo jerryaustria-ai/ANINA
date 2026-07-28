@@ -25,6 +25,7 @@ export default function InstructorDashboard() {
 
   const [form, setForm] = useState(null); // create/edit modal
   const [manage, setManage] = useState(null); // {session, bookings}
+  const [reschedule, setReschedule] = useState(null);
 
   async function load() {
     const from = cal.range.from.toISOString();
@@ -160,6 +161,44 @@ export default function InstructorDashboard() {
       toast.success(`Attendance marked as ${status === "present" ? "Present" : status === "absent" ? "Absent" : "No Show"}.`);
     } catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
     finally { setBusy(false); }
+  }
+  async function openBookingReschedule(booking) {
+    const bookingWithSession = { ...booking, session: manage.session };
+    setReschedule({
+      booking: bookingWithSession,
+      sessionId: "",
+      schedules: [],
+      loading: true,
+      error: "",
+    });
+    try {
+      const result = await api(`/bookings/${booking.id}/reschedule-options`);
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, schedules: result.schedules, validity: result.validity, loading: false }
+        : current);
+    } catch (error) {
+      setReschedule((current) => current?.booking.id === booking.id
+        ? { ...current, loading: false, error: error.message }
+        : current);
+    }
+  }
+  async function confirmBookingReschedule() {
+    if (!reschedule?.sessionId) return;
+    setBusy(true);
+    try {
+      await api(`/bookings/${reschedule.booking.id}/reschedule`, {
+        method: "POST",
+        body: { sessionId: reschedule.sessionId },
+      });
+      toast.success("Booking rescheduled.");
+      setReschedule(null);
+      await refreshManage();
+    } catch (error) {
+      error.status === 409 ? toast.warning(error.message) : toast.error(error.message);
+      await openBookingReschedule(reschedule.booking);
+    } finally {
+      setBusy(false);
+    }
   }
   async function sessionAction(action) {
     setBusy(true);
@@ -342,6 +381,8 @@ export default function InstructorDashboard() {
                       <button className="btn sm" onClick={() => decide(b.id, "accept")} disabled={busy}>Accept</button>
                       <button className="btn danger sm" onClick={() => decide(b.id, "decline")} disabled={busy}>Decline</button>
                     </>}
+                    {!classStarted && ["pending", "accepted", "waitlisted"].includes(b.status) &&
+                      <button className="btn ghost sm" onClick={() => openBookingReschedule(b)} disabled={busy}>Reschedule</button>}
                     {!classEnded && b.status === "accepted" && <button className="btn ghost sm" onClick={() => decide(b.id, "waitlist")} disabled={busy}>Waitlist</button>}
                     {classStarted && ["accepted", "attended", "no_show"].includes(b.status) && <>
                       <button className="btn sm" onClick={() => recordAttendance(b.id, "present")} disabled={busy}>Present</button>
@@ -354,6 +395,30 @@ export default function InstructorDashboard() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!reschedule} onClose={() => !busy && setReschedule(null)} title="Reschedule client booking"
+        footer={<><button className="btn ghost" onClick={() => setReschedule(null)} disabled={busy}>Close</button>
+          <button className="btn" onClick={confirmBookingReschedule}
+            disabled={busy || reschedule?.loading || !reschedule?.sessionId}>Confirm reschedule</button></>}>
+        {reschedule && <div>
+          <p className="meta-line">Client: <strong>{reschedule.booking.client?.name}</strong><br />
+            Current: {reschedule.booking.session?.title} — {fmtRange(reschedule.booking.session?.startAt, reschedule.booking.session?.endAt)}</p>
+          {reschedule.loading ? <div className="empty">Checking eligible schedules…</div>
+            : reschedule.error ? <div className="status-notice error">{reschedule.error}</div>
+              : reschedule.schedules.length === 0
+                ? <div className="empty">No available schedules for this class are within your plan validity period.</div>
+                : <div className="field"><label>Eligible replacement schedule</label>
+                  <select value={reschedule.sessionId}
+                    onChange={(event) => setReschedule({ ...reschedule, sessionId: event.target.value })}>
+                    <option value="">Select schedule</option>
+                    {reschedule.schedules.map((session) =>
+                      <option value={session.id} key={session.id}>
+                        {fmtRange(session.startAt, session.endAt)} — {session.instructor?.name} — {session.seatsLeft} slot{session.seatsLeft === 1 ? "" : "s"} left
+                      </option>)}
+                  </select>
+                </div>}
+        </div>}
       </Modal>
     </div>
   );
