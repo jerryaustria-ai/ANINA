@@ -81,9 +81,9 @@ export default function GuestCheckout() {
           <p>{new Date(order.session.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })}, {fmtTime(order.session.startAt)}</p>
           <dl>
             <div><dt>Validity</dt><dd>{validity(plan)}</dd></div>
-            <div><dt>Subtotal</dt><dd>{money(order.subtotal, order.currency)}</dd></div>
-            <div><dt>VAT</dt><dd>{money(order.vatAmount, order.currency)}</dd></div>
-            <div className="checkout-total"><dt>Total Amount</dt><dd>{money(order.totalAmount, order.currency)}</dd></div>
+            <div><dt>VATable Sales (Subtotal)</dt><dd>{money(order.subtotal, order.currency)}</dd></div>
+            <div><dt>VAT (12%)</dt><dd>{money(order.vatAmount, order.currency)}</dd></div>
+            <div className="checkout-total"><dt>Total Amount to Pay</dt><dd>{money(order.totalAmount, order.currency)}</dd></div>
           </dl>
         </div>
         <aside>

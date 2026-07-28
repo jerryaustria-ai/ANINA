@@ -10,6 +10,7 @@ import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
 import { hasPriorClientActivity } from "../services/firstTimer.js";
+import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
 
 const router = Router();
 const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -60,7 +61,7 @@ router.get("/plans", asyncHandler(async (req, res) => {
   res.json({
     session: session.toPublic(),
     plans: tiers.filter((tier) => matchesClass(tier, session)).map((tier) => tier.toPublic()),
-    vatRate: Number(process.env.VAT_RATE || 0),
+    vatRate: VAT_RATE,
   });
 }));
 
@@ -106,10 +107,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
     });
   }
 
-  const vatRate = Math.max(0, Number(process.env.VAT_RATE || 0));
-  const totalAmount = tier.amount;
-  const subtotal = vatRate ? Math.round((totalAmount / (1 + vatRate)) * 100) / 100 : totalAmount;
-  const vatAmount = Math.round((totalAmount - subtotal) * 100) / 100;
+  const { subtotal, vatAmount, totalAmount } = vatInclusiveBreakdown(tier.amount);
   const purchase = await GuestPurchase.create({
     fullName, email, phone, session: session._id, tier: tier._id,
     planSnapshot: planSnapshot(tier),

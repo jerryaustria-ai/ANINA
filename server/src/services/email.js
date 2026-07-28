@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { GuestPurchase } from "../models/GuestPurchase.js";
+import { vatInclusiveBreakdown } from "../utils/vat.js";
 
 const FROM = process.env.EMAIL_FROM || "";
 const SMTP_HOST = process.env.SMTP_HOST || "";
@@ -96,6 +97,7 @@ function renderEmail(purchase, type, details = {}) {
   const plan = purchase.planSnapshot;
   const paymentDate = purchase.paidAt || details.paymentDate;
   const receipt = details.receiptUrl || purchase.receiptUrl;
+  const vat = vatInclusiveBreakdown(purchase.totalAmount);
   const rows = [
     ["Customer", purchase.fullName],
     ["Email", purchase.email],
@@ -107,7 +109,13 @@ function renderEmail(purchase, type, details = {}) {
     ["Selected plan", plan.name],
     ["Sessions / classes", sessionsLabel(plan)],
     ["Plan validity", validityLabel(plan)],
-    ["Amount", money(type === "refund_processed" ? (details.amount ?? purchase.refundedAmount) : purchase.totalAmount, purchase.currency)],
+    ...(type === "refund_processed"
+      ? [["Refunded amount", money(details.amount ?? purchase.refundedAmount, purchase.currency)]]
+      : [
+          ["VATable sales (subtotal)", money(vat.subtotal, purchase.currency)],
+          ["VAT (12%)", money(vat.vatAmount, purchase.currency)],
+          ["Total amount paid", money(vat.totalAmount, purchase.currency)],
+        ]),
     ...(paymentDate ? [["Payment date", formatDateTime(paymentDate)]] : []),
     ...(purchase.paymentId ? [["Payment ID", purchase.paymentId]] : []),
   ];

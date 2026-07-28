@@ -31,8 +31,6 @@ services:
         sync: false
       - key: XENDIT_WEBHOOK_TOKEN
         sync: false
-      - key: VAT_RATE
-        value: "0"
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM

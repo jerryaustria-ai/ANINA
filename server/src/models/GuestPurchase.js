@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { vatInclusiveBreakdown } from "../utils/vat.js";
 
 const guestPurchaseSchema = new mongoose.Schema(
   {
@@ -56,6 +57,9 @@ const guestPurchaseSchema = new mongoose.Schema(
 guestPurchaseSchema.methods.toPublic = function () {
   const session = this.session?.toPublic ? this.session.toPublic() : this.session;
   const tier = this.tier?.toPublic ? this.tier.toPublic() : this.tier;
+  // Recompute the display breakdown for legacy orders that were created while
+  // VAT_RATE was disabled. The amount charged remains the inclusive total.
+  const vat = vatInclusiveBreakdown(this.totalAmount);
   return {
     id: this._id,
     referenceId: this.referenceId,
@@ -65,9 +69,9 @@ guestPurchaseSchema.methods.toPublic = function () {
     session,
     tier,
     plan: this.planSnapshot,
-    subtotal: this.subtotal,
-    vatAmount: this.vatAmount,
-    totalAmount: this.totalAmount,
+    subtotal: vat.subtotal,
+    vatAmount: vat.vatAmount,
+    totalAmount: vat.totalAmount,
     currency: this.currency,
     status: this.status,
     checkoutUrl: this.checkoutUrl,
