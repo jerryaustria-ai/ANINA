@@ -558,12 +558,6 @@ a { color:var(--sage-deep); }
 .public-book:disabled { background:#eeeae5; }
 .public-no-events { margin:1.4rem .5rem; }
 .public-week-empty { background:#fff; border:1px solid #ebe6df; margin-top:8px; }
-.public-login-prompt { position:fixed; z-index:30; bottom:18px; left:50%; transform:translateX(-50%); width:min(900px,calc(100% - 2rem));
-  min-height:54px; padding:.8rem 1.5rem; display:flex; align-items:center; justify-content:center; gap:1rem; flex-wrap:wrap;
-  background:#f7eee5; border:1px solid #eadfd4; border-radius:9px; box-shadow:0 10px 30px rgba(64,51,40,.09); font-size:.74rem; }
-.public-login-prompt>span:first-child { font-size:1rem; }
-.public-login-prompt a { color:#4c4036; }
-.public-login-prompt i { width:1px; height:18px; background:#8c8178; }
 
 @media (max-width:1000px) {
   .public-schedule-nav { grid-template-columns:1fr auto; }
@@ -591,9 +585,6 @@ a { color:var(--sage-deep); }
   .public-day.today>header strong { width:32px; height:32px; margin:0; }
   .public-day-events { min-height:0; gap:.35rem; }
   .public-session-card { min-height:180px; }
-  .public-login-prompt { bottom:8px; gap:.45rem .8rem; padding:.7rem 1rem; text-align:center; }
-  .public-login-prompt strong { width:100%; }
-  .public-login-prompt i { display:none; }
 }
 
 /* Public guest booking and one-time checkout */

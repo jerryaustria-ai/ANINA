@@ -184,14 +184,6 @@ export default function PublicSchedule() {
       </div>}
     </main>
 
-    {!user && <aside className="public-login-prompt">
-      <span aria-hidden="true">♙</span>
-      <strong>Please log in or create an account to book or join a waitlist.</strong>
-      <span>Already have an account? <Link to="/login">Log in</Link></span>
-      <i />
-      <Link to="/register">Create an account</Link>
-    </aside>}
-
     {selected && <div className="public-detail-backdrop" role="presentation" onMouseDown={() => setSelected(null)}>
       <section className="public-detail-modal" role="dialog" aria-modal="true" aria-labelledby="public-session-title"
         onMouseDown={(event) => event.stopPropagation()}>
