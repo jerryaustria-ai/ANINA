@@ -73,6 +73,40 @@ router.post(
   })
 );
 
+// Update own profile. This route must be declared before "/:id" so Express
+// does not treat the literal "me" as a MongoDB ObjectId.
+router.patch(
+  "/me",
+  asyncHandler(async (req, res) => {
+    const previous = req.user.toObject({ depopulate: true });
+    const { name, phone, picture, bio, specialties } = req.body || {};
+    if (name !== undefined) {
+      const cleanName = String(name).trim();
+      if (!cleanName) throw new HttpError(400, "Name is required");
+      req.user.name = cleanName;
+    }
+    if (phone !== undefined) req.user.phone = String(phone).trim();
+    if (picture !== undefined) {
+      validatePicture(picture);
+      req.user.picture = picture;
+    }
+    if (bio !== undefined) req.user.bio = String(bio);
+    if (specialties !== undefined) {
+      req.user.specialties = Array.isArray(specialties)
+        ? specialties.map((item) => String(item).trim()).filter(Boolean)
+        : [];
+    }
+    await req.user.save();
+    await createAuditLog({
+      actor: req.user, action: "PROFILE_UPDATED",
+      description: `${req.user.name} updated their profile.`,
+      entityType: "user", entityId: req.user._id, entityLabel: req.user.name,
+      previousValue: previous, updatedValue: req.user,
+    });
+    res.json({ user: req.user.toPublic() });
+  })
+);
+
 // Admin: view one user's complete public profile.
 router.get(
   "/:id",
@@ -257,35 +291,6 @@ router.delete(
     });
     await user.deleteOne();
     res.json({ ok: true, deleted: true });
-  })
-);
-
-// Update own profile. Role, account status, and permissions remain Admin-only.
-router.patch(
-  "/me",
-  asyncHandler(async (req, res) => {
-    const previous = req.user.toObject({ depopulate: true });
-    const { name, phone, picture, bio, specialties } = req.body || {};
-    if (name !== undefined) {
-      const cleanName = String(name).trim();
-      if (!cleanName) throw new HttpError(400, "Name is required");
-      req.user.name = cleanName;
-    }
-    if (phone !== undefined) req.user.phone = phone;
-    if (picture !== undefined) {
-      validatePicture(picture);
-      req.user.picture = picture;
-    }
-    if (bio !== undefined) req.user.bio = bio;
-    if (specialties !== undefined) req.user.specialties = specialties;
-    await req.user.save();
-    await createAuditLog({
-      actor: req.user, action: "PROFILE_UPDATED",
-      description: `${req.user.name} updated their profile.`,
-      entityType: "user", entityId: req.user._id, entityLabel: req.user.name,
-      previousValue: previous, updatedValue: req.user,
-    });
-    res.json({ user: req.user.toPublic() });
   })
 );
 
