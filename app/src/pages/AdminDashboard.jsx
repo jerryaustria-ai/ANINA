@@ -687,9 +687,6 @@ function ScheduleView() {
             <option value="on_hold">On Hold</option>
             <option value="published">Published</option><option value="completed">Completed</option>
           </select></div>}
-          <div className="field"><label>Assigned clients</label>
-            <ClientMultiSelect clients={clients} value={edit.clientIds} capacity={Number(edit.capacity)}
-              onChange={(clientIds) => setEdit({ ...edit, clientIds })} /></div>
           {!edit.id && <div className="field recurring-fields">
             <label className="check-line"><input type="checkbox" checked={edit.recurring}
               onChange={(event) => setEdit({ ...edit, recurring: event.target.checked, clientIds: [] })} />
@@ -709,6 +706,9 @@ function ScheduleView() {
               <p className="meta-line">Recurring schedules are created without client assignments. Clients can be added to each occurrence afterward.</p>
             </>}
           </div>}
+          <div className="field"><label>Assigned clients</label>
+            <ClientMultiSelect clients={clients} value={edit.clientIds} capacity={Number(edit.capacity)}
+              onChange={(clientIds) => setEdit({ ...edit, clientIds })} /></div>
           <div className="field"><label>Notes</label><textarea rows="2" value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
         </div>}
       </Modal>
