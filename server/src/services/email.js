@@ -225,6 +225,10 @@ async function sendCashEmail(purchase, { subject, heading, message, actionUrl = 
         <p style="font-size:12px;color:#776f67">Need help? Contact ${escape(SUPPORT_EMAIL)}.</p>
       </div></body></html>`,
   });
+  if (!result.accepted?.length || result.rejected?.length) {
+    throw new Error(`SMTP did not accept the cash confirmation email${result.rejected?.length
+      ? ` for ${result.rejected.join(", ")}` : ""}.`);
+  }
   return { status: "sent", id: result.messageId || "" };
 }
 
