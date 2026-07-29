@@ -21,10 +21,13 @@ export async function migrateClassIds() {
   }
 
   const tiers = await MembershipTier.find();
+  const rawTiers = new Map((await MembershipTier.collection.find({}).toArray())
+    .map((item) => [String(item._id), item]));
   for (const tier of tiers) {
     if (!tier.eligibleClassIds?.length) {
-      const legacyValues = tier.eligibleClassCodes?.length
-        ? tier.eligibleClassCodes : tier.classTags || [];
+      const rawTier = rawTiers.get(String(tier._id));
+      const legacyValues = rawTier?.eligibleClassCodes?.length
+        ? rawTier.eligibleClassCodes : tier.classTags || [];
       tier.eligibleClassIds = [...new Set(legacyValues.map((value) =>
         byLegacyCode.get(normalized(value))?._id ||
         byTitle.get(normalized(value))?._id

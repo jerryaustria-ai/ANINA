@@ -1575,7 +1575,7 @@ function TiersView() {
                   </label>;
                 })}
               </div>
-              {!classes.length && <small>Create an active Class with a Class Code first.</small>}
+              {!classes.length && <small>Create an active Class first.</small>}
             </div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
             <label className="plan-checkbox" htmlFor="first-timer-only">
