@@ -1013,6 +1013,13 @@ function ClassTitlesView() {
     } catch (error) { toast.error(error.message); }
   }
   const maximumCapacity = Number(edit?.defaultCapacity);
+  const selectedRoomCapacity = rooms.find((room) =>
+    room.id === (edit?.defaultRoom?.id || edit?.defaultRoom))?.maxCapacity;
+  const maximumIsValid = edit?.type === "private" || (
+    Number.isInteger(maximumCapacity) &&
+    maximumCapacity >= 1 &&
+    (!selectedRoomCapacity || maximumCapacity <= selectedRoomCapacity)
+  );
   const minimumParticipants = Number(edit?.defaultMinToRun);
   const minimumIsValid = edit?.type === "private" || (
     Number.isInteger(minimumParticipants) &&
@@ -1039,7 +1046,8 @@ function ClassTitlesView() {
     <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit Class Title" : "Create Class Title"}
       footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
         <button className="btn" onClick={save}
-          disabled={busy || !edit?.title.trim() || !edit?.code?.trim() || !minimumIsValid}>Save</button></>}>
+          disabled={busy || !edit?.title.trim() || !edit?.code?.trim() ||
+            !maximumIsValid || !minimumIsValid}>Save</button></>}>
       {edit && <div>
         <div className="field"><label>Class title</label><input value={edit.title}
           onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></div>
@@ -1077,7 +1085,8 @@ function ClassTitlesView() {
               <option value={room.id} key={room.id}>{room.name} (max {room.maxCapacity})</option>)}
           </select></div></div>
         <div className="field row"><div><label>Maximum capacity</label><input type="number" min="1"
-          disabled={edit.type === "private" || !!edit.defaultRoom} value={edit.defaultCapacity}
+          max={rooms.find((room) => room.id === edit.defaultRoom)?.maxCapacity}
+          disabled={edit.type === "private"} value={edit.defaultCapacity}
           onChange={(event) => {
             const capacity = Math.max(1, Number(event.target.value) || 1);
             setEdit({
@@ -1087,7 +1096,10 @@ function ClassTitlesView() {
             });
           }} />
           {!!edit.defaultRoom && edit.type !== "private" &&
-            <small>Automatically set from the selected room.</small>}</div>
+            <small>Defaults to the room capacity, but may be reduced manually.</small>}
+          {!maximumIsValid && <small className="field-error">
+            Maximum Capacity must be between 1 and the selected room capacity ({selectedRoomCapacity}).
+          </small>}</div>
           <div><label>Minimum participants</label><input type="number" min="1" max={edit.defaultCapacity}
             disabled={edit.type === "private"} value={edit.defaultMinToRun}
             aria-invalid={!minimumIsValid}

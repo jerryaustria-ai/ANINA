@@ -77,13 +77,16 @@ async function validate(body, existing = null) {
     if (!room) throw new HttpError(400, "The selected default room is unavailable.");
   }
   const requestedCapacity = Number(body.defaultCapacity ?? existing?.defaultCapacity ?? 8);
-  const capacity = type === "private" ? 1 : room ? room.maxCapacity : requestedCapacity;
+  const capacity = type === "private" ? 1 : requestedCapacity;
   const requestedMinimum = Number(body.defaultMinToRun ?? existing?.defaultMinToRun ?? 1);
   const minimum = type === "private" ? 1 : requestedMinimum;
   if (!title) throw new HttpError(400, "Class title is required.");
   if (!code) throw new HttpError(400, "Class Code is required.");
   if (!["group", "private"].includes(type)) throw new HttpError(400, "Class type is invalid.");
   if (!Number.isInteger(capacity) || capacity < 1) throw new HttpError(400, "Capacity must be greater than zero.");
+  if (room && capacity > room.maxCapacity) {
+    throw new HttpError(400, `Maximum capacity cannot exceed the selected room capacity of ${room.maxCapacity}.`);
+  }
   if (!Number.isInteger(minimum) || minimum < 1 || minimum > capacity) {
     throw new HttpError(400, "Minimum participants must be between 1 and the class capacity.");
   }
