@@ -122,8 +122,6 @@ export default function GuestCheckout() {
           {awaitingCashEmail && <div className="cash-confirmation-note">
             <strong>Check your email to confirm enrollment.</strong>
             <span>Sent to {order.email}. The secure link expires after 24 hours. Payment will remain pending until received by ANINA.</span>
-            <button type="button" className="btn ghost sm" onClick={requestCashConfirmation}
-              disabled={working}>{working ? "Sending…" : "Resend Confirmation Email"}</button>
           </div>}
           {done && <Link className="guest-primary link" to="/login">Log in to view your booking</Link>}
           <small>{paymentMethod === "cash"
