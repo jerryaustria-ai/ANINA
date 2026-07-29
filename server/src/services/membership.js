@@ -73,17 +73,18 @@ export async function hasActiveMembership(clientId) {
   return !!(m && m.isActiveNow());
 }
 
-export function membershipAllowsClass(membership, classTitle) {
-  const tags = membership.validClassTags || [];
-  if (!tags.length) return true;
-  const title = String(classTitle || "").trim().toLowerCase();
-  return tags.some((tag) => {
-    const normalized = String(tag || "").trim().toLowerCase();
-    return normalized === title || title.includes(normalized) || normalized.includes(title);
-  });
+export function membershipAllowsClass(membership, classReference) {
+  const codes = (membership.validClassCodes || [])
+    .map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
+  const classCode = String(
+    typeof classReference === "string"
+      ? classReference
+      : classReference?.classCode || classReference?.classDefinition?.code || ""
+  ).trim().toUpperCase();
+  return !!classCode && codes.includes(classCode);
 }
 
-export async function findEligibleMembership(clientId, classTitle) {
+export async function findEligibleMembership(clientId, classReference) {
   const memberships = await Membership.find({
     client: clientId,
     status: "active",
@@ -95,7 +96,7 @@ export async function findEligibleMembership(clientId, classTitle) {
   }).sort("currentPeriodEnd createdAt");
   return memberships.find((membership) =>
     membership.isActiveNow() &&
-    membershipAllowsClass(membership, classTitle) &&
+    membershipAllowsClass(membership, classReference) &&
     (membership.unlimitedClasses || membership.sessionsRemaining == null || membership.sessionsRemaining > 0)
   ) || null;
 }

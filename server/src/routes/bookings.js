@@ -102,8 +102,9 @@ async function announceBooking(booking, session, actorId, action) {
   }, actorId);
 }
 
-const sameClassName = (left, right) =>
-  String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+const sameClassCode = (left, right) =>
+  !!String(left || "").trim() &&
+  String(left || "").trim().toUpperCase() === String(right || "").trim().toUpperCase();
 
 async function loadRescheduleContext(req) {
   const booking = await Booking.findById(req.params.id)
@@ -130,7 +131,7 @@ async function loadRescheduleContext(req) {
 }
 
 function validateReplacementSchedule({ booking, membership, target, now = new Date() }) {
-  if (!sameClassName(target.title, booking.session.title)) {
+  if (!sameClassCode(target.classCode, booking.session.classCode)) {
     throw new HttpError(409, "The replacement schedule must be for the same class.");
   }
   if (target.status !== "published" || target.isPublished !== true) {
@@ -226,7 +227,7 @@ router.post(
     assertScheduleBookable(session);
 
     const clientId = req.user.role === "admin" && req.body.clientId ? req.body.clientId : req.user._id;
-    const membership = await findEligibleMembership(clientId, session.title);
+    const membership = await findEligibleMembership(clientId, session);
     if (!membership) {
       throw new HttpError(402, "An active eligible plan with remaining credit is required to book this class.");
     }
@@ -288,7 +289,7 @@ router.post(
     const session = await ClassSession.findById(sessionId);
     if (!session) throw new HttpError(404, "Session not found");
     assertScheduleBookable(session);
-    const membership = await findEligibleMembership(clientId, session.title);
+    const membership = await findEligibleMembership(clientId, session);
     if (!membership) {
       throw new HttpError(402, "This client does not have an active eligible plan with remaining credit.");
     }
@@ -370,7 +371,7 @@ router.post(
       await announceBooking(booking, booking.session, req.user._id, "waitlisted");
       return res.status(200).json({ booking: booking.toPublic(), waitlisted: true, reason: "class full" });
     }
-    const membership = await findEligibleMembership(booking.client, booking.session.title);
+    const membership = await findEligibleMembership(booking.client, booking.session);
     if (!membership) {
       await releaseSeat(booking.session._id);
       throw new HttpError(402, "The client no longer has an eligible plan credit for this class.");
@@ -412,7 +413,7 @@ router.get(
       : now;
     const query = {
       _id: { $ne: booking.session._id },
-      title: booking.session.title,
+      classCode: booking.session.classCode,
       status: "published",
       isPublished: true,
       startAt: {

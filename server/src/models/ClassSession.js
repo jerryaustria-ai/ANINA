@@ -16,6 +16,7 @@ const classSessionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     classDefinition: { type: mongoose.Schema.Types.ObjectId, ref: "ClassDefinition", default: null, index: true },
+    classCode: { type: String, trim: true, uppercase: true, default: "", index: true },
     type: { type: String, enum: SESSION_TYPES, default: "group", index: true },
 
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
@@ -67,6 +68,7 @@ classSessionSchema.methods.toPublic = function () {
     id: this._id,
     title: this.title,
     classDefinition: this.classDefinition,
+    classCode: this.classCode || this.classDefinition?.code || "",
     type: this.type,
     instructor: inst,
     room: rm,

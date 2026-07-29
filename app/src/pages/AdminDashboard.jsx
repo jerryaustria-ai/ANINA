@@ -959,7 +959,7 @@ function ScheduleApprovalView() {
 
 /* ---------- Official class titles ---------- */
 const blankClassTitle = {
-  title: "", description: "", type: "group", defaultRoom: "",
+  title: "", code: "", description: "", type: "group", defaultRoom: "",
   defaultCapacity: 8, defaultMinToRun: 1, active: true,
 };
 function ClassTitlesView() {
@@ -985,8 +985,18 @@ function ClassTitlesView() {
         defaultCapacity: Number(edit.defaultCapacity),
         defaultMinToRun: Number(edit.defaultMinToRun),
       };
-      if (edit.id) await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
-      else await api("/class-definitions", { method: "POST", body });
+      if (edit.id) {
+        try {
+          await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
+        } catch (error) {
+          if (error.status !== 409 ||
+              !error.message.includes("Confirm the change") ||
+              !window.confirm(`${error.message}\n\nDo you want to update the linked records?`)) throw error;
+          await api(`/class-definitions/${edit.id}`, {
+            method: "PATCH", body: { ...body, confirmCodeChange: true },
+          });
+        }
+      } else await api("/class-definitions", { method: "POST", body });
       toast.success(edit.id ? "Official class title updated." : "Official class title created.");
       setEdit(null);
       await load();
@@ -1018,7 +1028,8 @@ function ClassTitlesView() {
     <div className="grid-cards">{items.map((item) => <article className="card" key={item.id}
       style={{ opacity: item.active ? 1 : .55 }}>
       <h3>{item.title}</h3><p className="sub">{item.description || "No description"}</p>
-      <p className="meta-line">{item.type === "private" ? "Private 1:1" : "Group Class"}<br />
+      <p className="meta-line"><strong>Code: {item.code}</strong><br />
+        {item.type === "private" ? "Private 1:1" : "Group Class"}<br />
         Default room: {item.defaultRoom?.name || "Not assigned"}<br />
         Capacity: {item.defaultCapacity} · Minimum: {item.defaultMinToRun}</p>
       <button className="btn ghost sm" onClick={() => setEdit({
@@ -1028,10 +1039,15 @@ function ClassTitlesView() {
     <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit Class Title" : "Create Class Title"}
       footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
         <button className="btn" onClick={save}
-          disabled={busy || !edit?.title.trim() || !minimumIsValid}>Save</button></>}>
+          disabled={busy || !edit?.title.trim() || !edit?.code?.trim() || !minimumIsValid}>Save</button></>}>
       {edit && <div>
         <div className="field"><label>Class title</label><input value={edit.title}
           onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></div>
+        <div className="field"><label>Class Code <span aria-hidden="true">*</span></label>
+          <input value={edit.code || ""} onChange={(event) =>
+            setEdit({ ...edit, code: event.target.value.toUpperCase() })}
+          placeholder="e.g. PILATES-FOUNDATION" autoCapitalize="characters" />
+          <small>Unique code used by plans, bookings, credits, and rescheduling.</small></div>
         <div className="field"><label>Description</label><textarea rows="3" value={edit.description}
           onChange={(event) => setEdit({ ...edit, description: event.target.value })} /></div>
         <div className="field row"><div><label>Class type</label><select value={edit.type}
@@ -1460,25 +1476,37 @@ function PeopleView() {
 
 /* ---------- Membership tiers (admin-managed) ---------- */
 const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1,
-  benefits: "", classTags: "", firstTimerOnly: false, active: true, sortOrder: 0 };
+  benefits: "", eligibleClassCodes: [], sessionCount: 1, unlimitedClasses: false,
+  firstTimerOnly: false, active: true, sortOrder: 0 };
 function TiersView() {
   const [tiers, setTiers] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [edit, setEdit] = useState(null);
   const [busy, setBusy] = useState(false);
-  const load = () => api("/tiers?all=1").then(({ tiers }) => setTiers(tiers));
+  const load = async () => {
+    const [tierData, classData] = await Promise.all([
+      api("/tiers?all=1"), api("/class-definitions?all=1"),
+    ]);
+    setTiers(tierData.tiers);
+    setClasses(classData.classes.filter((item) => item.active));
+  };
   useEffect(() => { load(); }, []);
 
   function openEdit(t) {
-    setEdit(t ? { ...t, benefits: (t.benefits || []).join("\n"), classTags: (t.classTags || []).join(", ") } : { ...blankTier });
+    setEdit(t ? {
+      ...t,
+      benefits: (t.benefits || []).join("\n"),
+      eligibleClassCodes: t.eligibleClassCodes || [],
+    } : { ...blankTier, eligibleClassCodes: [] });
   }
   async function save() {
     setBusy(true);
     try {
-      const { sessionCount: _sessionCount, unlimitedClasses: _unlimitedClasses, ...planFields } = edit;
-      const body = { ...planFields, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
+      const body = { ...edit, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
+        sessionCount: edit.unlimitedClasses ? null : Number(edit.sessionCount),
         firstTimerOnly: edit.firstTimerOnly === true,
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
-        classTags: String(edit.classTags || "").split(",").map((s) => s.trim()).filter(Boolean) };
+        eligibleClassCodes: edit.eligibleClassCodes };
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
       else await api("/tiers", { method: "POST", body });
       const wasEdit = !!edit.id;
@@ -1501,7 +1529,7 @@ function TiersView() {
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
               <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> Plan Amount</span></p>
               {t.description && <div className="sub">{t.description}</div>}
-              <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · {t.classTags?.length ? t.classTags.join(", ") : "All classes"}</div>
+              <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · Eligible: {(t.eligibleClassCodes || []).join(", ") || "None"}</div>
               {t.firstTimerOnly && <div className="status-tag pending" style={{ marginTop: ".55rem" }}>First Timer Only</div>}
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
@@ -1512,7 +1540,8 @@ function TiersView() {
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit class plan" : "Add class plan"}
         footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
-          <button className="btn" onClick={save} disabled={busy || !edit?.name}>Save</button></>}>
+          <button className="btn" onClick={save}
+            disabled={busy || !edit?.name || !edit?.eligibleClassCodes?.length}>Save</button></>}>
         {edit && (
           <div>
             <div className="field"><label>Name</label><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="e.g. Sanctuary" /></div>
@@ -1522,11 +1551,36 @@ function TiersView() {
               <div><label>Currency</label><select value={edit.currency} onChange={(e) => setEdit({ ...edit, currency: e.target.value })}><option>PHP</option><option>IDR</option><option>USD</option></select></div>
             </div>
             <div className="field row">
+              <div><label>Booking Credits</label><input type="number" min="1"
+                disabled={edit.unlimitedClasses} value={edit.sessionCount ?? 1}
+                onChange={(e) => setEdit({ ...edit, sessionCount: e.target.value })} /></div>
+              <label className="plan-checkbox">
+                <input type="checkbox" checked={edit.unlimitedClasses === true}
+                  onChange={(e) => setEdit({ ...edit, unlimitedClasses: e.target.checked })} />
+                <span><strong>Unlimited classes</strong><small>No credit limit during validity.</small></span>
+              </label>
+            </div>
+            <div className="field row">
               <div><label>Validity unit</label><select value={edit.interval} onChange={(e) => setEdit({ ...edit, interval: e.target.value })}><option value="DAY">Day</option><option value="WEEK">Week</option><option value="MONTH">Month</option><option value="YEAR">Year</option></select></div>
               <div><label>Valid for</label><input type="number" min="1" value={edit.intervalCount} onChange={(e) => setEdit({ ...edit, intervalCount: e.target.value })} /></div>
             </div>
-            <div className="field"><label>Class names or codes (comma separated; blank means All Access)</label>
-              <input value={edit.classTags} onChange={(e) => setEdit({ ...edit, classTags: e.target.value })} placeholder="Vinyasa, VYB" /></div>
+            <div className="field"><label>Eligible Classes <span aria-hidden="true">*</span></label>
+              <div className="client-picker-list">
+                {classes.map((item) => {
+                  const selected = edit.eligibleClassCodes.includes(item.code);
+                  return <label className="client-picker-option" key={item.id}>
+                    <input type="checkbox" checked={selected} onChange={(event) => {
+                      const eligibleClassCodes = event.target.checked
+                        ? [...new Set([...edit.eligibleClassCodes, item.code])]
+                        : edit.eligibleClassCodes.filter((code) => code !== item.code);
+                      setEdit({ ...edit, eligibleClassCodes });
+                    }} />
+                    <span><strong>{item.code}</strong><small>{item.title}</small></span>
+                  </label>;
+                })}
+              </div>
+              {!classes.length && <small>Create an active Class with a Class Code first.</small>}
+            </div>
             <div className="field"><label>Benefits (one per line)</label><textarea rows="3" value={edit.benefits} onChange={(e) => setEdit({ ...edit, benefits: e.target.value })} /></div>
             <label className="plan-checkbox" htmlFor="first-timer-only">
               <input id="first-timer-only" type="checkbox" checked={edit.firstTimerOnly === true}

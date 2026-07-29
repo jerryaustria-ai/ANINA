@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "migrate:class-codes": "node src/scripts/migrateClassCodes.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

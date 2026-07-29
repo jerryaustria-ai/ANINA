@@ -28,7 +28,7 @@ const router = Router();
 const populate = (q) =>
   q.populate("instructor", "name email picture role active")
     .populate("room", "name color maxCapacity location active")
-    .populate("classDefinition", "title description type defaultCapacity defaultMinToRun active");
+    .populate("classDefinition", "title code description type defaultCapacity defaultMinToRun active");
 
 const ACTIVE_CLIENT_STATUSES = ["pending", "accepted", "approved", "confirmed", "booked", "waitlisted", "active"];
 
@@ -268,12 +268,13 @@ router.post(
     const { title, type = "group", room, startAt, endAt, capacity, minToRun = 1, notes, color, classDefinition } = req.body || {};
     const instructorId = req.body.instructor && req.user.role === "admin" ? req.body.instructor : req.user._id;
 
-    if (!title || !room || !startAt || !endAt || !capacity) {
-      throw new HttpError(400, "title, room, startAt, endAt and capacity are required");
+    if (!title || !classDefinition || !room || !startAt || !endAt || !capacity) {
+      throw new HttpError(400, "class, room, startAt, endAt and capacity are required");
     }
     if (!SESSION_TYPES.includes(type)) throw new HttpError(400, "Invalid session type");
+    let official = null;
     if (classDefinition) {
-      const official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
+      official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
       if (!official) throw new HttpError(400, "The selected official class title is unavailable.");
       if (official.title !== title) throw new HttpError(400, "Class title does not match the selected official class.");
     }
@@ -286,7 +287,7 @@ router.post(
     const instructorSubmission = req.user.role === "instructor";
     const now = new Date();
     const session = await ClassSession.create({
-      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, classCode: official?.code || "", type, instructor: instructorId, room,
       startAt, endAt, capacity: cap, minToRun: min,
       notes, color,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -524,8 +525,8 @@ router.post(
     } = req.body || {};
     const instructorId = req.user.role === "admin" && requestedInstructor
       ? requestedInstructor : req.user._id;
-    if (!title || !room || !startAt || !endAt || !capacity || !until) {
-      throw new HttpError(400, "Recurring schedules require title, room, start, end, capacity, and end date.");
+    if (!title || !classDefinition || !room || !startAt || !endAt || !capacity || !until) {
+      throw new HttpError(400, "Recurring schedules require class, room, start, end, capacity, and end date.");
     }
     if (!["daily", "weekly", "monthly"].includes(frequency)) {
       throw new HttpError(400, "Recurrence must be daily, weekly, or monthly.");
@@ -536,8 +537,9 @@ router.post(
       throw new HttpError(400, "Select at least one valid weekday.");
     }
     if (!SESSION_TYPES.includes(type)) throw new HttpError(400, "Invalid session type");
+    let official = null;
     if (classDefinition) {
-      const official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
+      official = await ClassDefinition.findOne({ _id: classDefinition, active: true });
       if (!official || official.title !== title) {
         throw new HttpError(400, "The selected official class title is unavailable.");
       }
@@ -583,7 +585,7 @@ router.post(
     const now = new Date();
     const recurrenceGroupId = randomUUID();
     const created = await ClassSession.insertMany(occurrences.map((occurrence) => ({
-      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, classCode: official?.code || "", type, instructor: instructorId, room,
       startAt: occurrence.start, endAt: occurrence.end,
       capacity: cap, minToRun: min, notes, color, recurrenceGroupId,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -683,9 +685,10 @@ router.patch(
     const timeChanged = (b.startAt !== undefined && new Date(b.startAt).getTime() !== session.startAt.getTime()) ||
       (b.endAt !== undefined && new Date(b.endAt).getTime() !== session.endAt.getTime());
     const instructorId = req.user.role === "admin" && b.instructor ? b.instructor : session.instructor;
+    let selectedOfficial = null;
     if (b.classDefinition !== undefined && b.classDefinition) {
-      const official = await ClassDefinition.findOne({ _id: b.classDefinition, active: true });
-      if (!official || (b.title !== undefined && official.title !== b.title)) {
+      selectedOfficial = await ClassDefinition.findOne({ _id: b.classDefinition, active: true });
+      if (!selectedOfficial || (b.title !== undefined && selectedOfficial.title !== b.title)) {
         throw new HttpError(400, "The selected official class title is unavailable.");
       }
     }
@@ -741,6 +744,7 @@ router.patch(
     });
     if (b.room !== undefined) session.room = b.room;
     if (b.classDefinition !== undefined) session.classDefinition = b.classDefinition || null;
+    if (selectedOfficial) session.classCode = selectedOfficial.code;
     if (req.user.role === "admin" && b.instructor !== undefined) session.instructor = instructorId;
     if (req.user.role === "instructor") {
       session.status = "pending_approval";
@@ -1070,7 +1074,7 @@ router.put(
     const membershipByClient = new Map();
     const reservedMembershipIds = [];
     for (const clientId of addedIds) {
-      const membership = await findEligibleMembership(clientId, session.title);
+      const membership = await findEligibleMembership(clientId, session);
       const client = clients.find((item) => item._id.toString() === clientId);
       if (!membership) {
         throw new HttpError(402, `${client?.name || "A selected client"} does not have an active eligible plan credit.`);

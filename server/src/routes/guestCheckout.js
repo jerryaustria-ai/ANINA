@@ -13,17 +13,14 @@ import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
 
 const router = Router();
-const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const normalizeCode = (value) => String(value || "").trim().toUpperCase();
 const safeSession = (session) => session?.status === "published" &&
   session?.isPublished === true && session?.approvedAt && new Date(session.endAt) > new Date();
 
 function matchesClass(tier, session) {
-  if (!tier.classTags?.length) return true;
-  const title = normalize(session.title);
-  return tier.classTags.some((tag) => {
-    const normalized = normalize(tag);
-    return normalized && (title.includes(normalized) || normalized.includes(title));
-  });
+  const classCode = normalizeCode(session.classCode || session.classDefinition?.code);
+  const eligible = (tier.eligibleClassCodes || []).map(normalizeCode);
+  return !!classCode && eligible.includes(classCode);
 }
 
 function planSnapshot(tier) {
@@ -39,6 +36,7 @@ function planSnapshot(tier) {
     interval: tier.interval,
     intervalCount: tier.intervalCount,
     classTags: tier.classTags,
+    eligibleClassCodes: tier.eligibleClassCodes,
   };
 }
 
@@ -55,7 +53,7 @@ async function loadAuthorizedOrder(req) {
 }
 
 router.get("/plans", asyncHandler(async (req, res) => {
-  const session = await ClassSession.findById(req.query.sessionId).populate("instructor room");
+  const session = await ClassSession.findById(req.query.sessionId).populate("instructor room classDefinition");
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   const tiers = await MembershipTier.find({ active: true }).sort({ sortOrder: 1, amount: 1 });
   res.json({
@@ -74,7 +72,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   if (phone.length < 7) return res.status(400).json({ error: "Please enter a valid phone number." });
 
   const [session, tier] = await Promise.all([
-    ClassSession.findById(req.body.sessionId).populate("instructor room"),
+    ClassSession.findById(req.body.sessionId).populate("instructor room classDefinition"),
     MembershipTier.findOne({ _id: req.body.tierId, active: true }),
   ]);
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });

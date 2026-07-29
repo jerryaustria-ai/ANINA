@@ -145,7 +145,7 @@ function recurringMembershipRecord(membership) {
     } : null,
     referenceId: membership.referenceId,
     purchasedPlan: tier?.name || "Recurring Membership",
-    className: tier?.classTags?.length ? tier.classTags.join(", ") : "All eligible classes",
+    className: tier?.eligibleClassCodes?.length ? tier.eligibleClassCodes.join(", ") : "No eligible classes",
     amountPaid: tier?.amount || 0,
     currency: tier?.currency || "PHP",
     paymentMethod: "Xendit",
@@ -239,6 +239,11 @@ router.post(
       xenditPlanId: subscription.planId,
       checkoutUrl: subscription.checkoutUrl,
       simulated: !xendit.isLive(),
+      validClassTags: tier.classTags,
+      validClassCodes: tier.eligibleClassCodes,
+      sessionsIncluded: tier.sessionCount,
+      sessionsRemaining: tier.sessionCount,
+      unlimitedClasses: tier.unlimitedClasses,
     });
     await membership.populate("tier");
     res.status(201).json({

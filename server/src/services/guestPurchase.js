@@ -137,6 +137,7 @@ async function performFulfillment(purchaseId, payment = {}) {
       sessionsReserved: 0,
       unlimitedClasses: purchase.tier.unlimitedClasses,
       validClassTags: purchase.tier.classTags,
+      validClassCodes: purchase.tier.eligibleClassCodes,
       cycleCount: 1,
       lastEvent: "payment_session.completed",
       simulated: purchase.simulated,
