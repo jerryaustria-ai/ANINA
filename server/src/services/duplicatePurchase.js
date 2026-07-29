@@ -8,6 +8,7 @@ const ACTIVE_BOOKING_STATUSES = ["pending", "accepted", "waitlisted"];
 const ACTIVE_PURCHASE_STATUSES = [
   "paid",
   "pending_confirmation",
+  "pending_cash_payment",
   "confirmed",
   "waitlisted",
 ];

@@ -4,7 +4,10 @@ import { GuestPurchase } from "../models/GuestPurchase.js";
 import { Membership } from "../models/Membership.js";
 import { User } from "../models/User.js";
 import { claimSeat } from "./capacity.js";
-import { sendPurchaseStatusEmailOnce } from "./email.js";
+import {
+  sendCashEnrollmentConfirmedEmail,
+  sendPurchaseStatusEmailOnce,
+} from "./email.js";
 import { createNotification, notifyAdmins } from "./notifications.js";
 import QRCode from "qrcode";
 import { issueCheckInToken } from "./checkIn.js";
@@ -85,11 +88,13 @@ async function saveSuccessfulBookingHistory({ client, purchase, booking, members
 async function performFulfillment(purchaseId, payment = {}) {
   let purchase = await GuestPurchase.findById(purchaseId).populate("tier session");
   if (!purchase) throw Object.assign(new Error("Purchase not found."), { status: 404 });
-  if (purchase.booking && ["confirmed", "waitlisted"].includes(purchase.status)) return purchase;
+  const cashPending = payment.cashPending === true;
+  if (purchase.booking && ["confirmed", "waitlisted", "pending_cash_payment"].includes(purchase.status)) return purchase;
 
-  purchase.status = "paid";
-  purchase.paidAt ||= new Date();
+  purchase.status = cashPending ? "pending_cash_payment" : "paid";
+  if (!cashPending) purchase.paidAt ||= new Date();
   purchase.paymentId = payment.paymentId || purchase.paymentId;
+  purchase.paymentMethod = cashPending ? "Cash" : purchase.paymentMethod;
   await purchase.save();
 
   const client = await findOrCreateCustomer(purchase);
@@ -107,14 +112,16 @@ async function performFulfillment(purchaseId, payment = {}) {
         $set: {
           status: bookingStatus,
           source: "guest_checkout",
-          paymentStatus: "paid",
+          paymentStatus: cashPending ? "pending" : "paid",
           purchase: purchase._id,
-          note: "Created after successful guest checkout.",
+          note: cashPending
+            ? "Created after cash enrollment email confirmation; payment is pending."
+            : "Created after successful guest checkout.",
         },
       },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
-  } else if (booking.paymentStatus !== "paid") {
+  } else if (!cashPending && booking.paymentStatus !== "paid") {
     booking.paymentStatus = "paid";
     booking.purchase = purchase._id;
     await booking.save();
@@ -128,7 +135,7 @@ async function performFulfillment(purchaseId, payment = {}) {
     membership = await Membership.create({
       client: client._id,
       tier: purchase.tier._id,
-      status: "active",
+      status: cashPending ? "pending" : "active",
       source: "guest_checkout",
       referenceId: purchase.referenceId,
       currentPeriodEnd: periodEnd(purchase.tier),
@@ -139,11 +146,12 @@ async function performFulfillment(purchaseId, payment = {}) {
       validClassTags: purchase.tier.classTags,
       validClassIds: purchase.tier.eligibleClassIds,
       cycleCount: 1,
-      lastEvent: "payment_session.completed",
+      lastEvent: cashPending ? "cash_enrollment.confirmed" : "payment_session.completed",
       simulated: purchase.simulated,
     });
   }
-  if (bookingStatus === "accepted" && booking.creditStatus !== "reserved" && booking.creditStatus !== "consumed") {
+  if (!cashPending && bookingStatus === "accepted" &&
+      booking.creditStatus !== "reserved" && booking.creditStatus !== "consumed") {
     const reserved = await reserveMembershipCredit(membership._id);
     if (!reserved) throw Object.assign(new Error("The purchased plan has no available class credit."), { status: 409 });
     booking.membership = membership._id;
@@ -157,11 +165,16 @@ async function performFulfillment(purchaseId, payment = {}) {
   purchase.client = client._id;
   purchase.booking = booking._id;
   purchase.membership = membership._id;
-  purchase.status = bookingStatus === "accepted" ? "confirmed" : "waitlisted";
+  purchase.status = cashPending
+    ? "pending_cash_payment"
+    : bookingStatus === "accepted" ? "confirmed" : "waitlisted";
+  purchase.enrollmentStatus = "enrolled";
   await purchase.save();
-  await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
+  if (!cashPending) {
+    await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
+  }
   let qrCodeBase64 = "";
-  if (bookingStatus === "accepted") {
+  if (!cashPending && bookingStatus === "accepted") {
     const checkInToken = await issueCheckInToken(booking._id);
     const qrDataUrl = await QRCode.toDataURL(checkInToken, {
       errorCorrectionLevel: "M",
@@ -175,16 +188,21 @@ async function performFulfillment(purchaseId, payment = {}) {
     createNotification({
       recipient: client,
       type: "BOOKING_CONFIRMED",
-      title: bookingStatus === "accepted" ? "Booking Confirmed" : "Added to Waitlist",
-      message: `${session.title} payment was received.`,
+      title: cashPending ? "Cash Enrollment Confirmed"
+        : bookingStatus === "accepted" ? "Booking Confirmed" : "Added to Waitlist",
+      message: cashPending
+        ? `${session.title} is enrolled with Pending Cash Payment.`
+        : `${session.title} payment was received.`,
       relatedBookingId: booking._id,
       relatedScheduleId: session._id,
       eventKey: `guest-paid-${purchase._id}`,
     }),
     notifyAdmins({
       type: "BOOKING_CONFIRMED",
-      title: "Guest Booking Paid",
-      message: `${purchase.fullName} purchased ${purchase.planSnapshot.name} for ${session.title}.`,
+      title: cashPending ? "Cash Enrollment Confirmed" : "Guest Booking Paid",
+      message: cashPending
+        ? `${purchase.fullName} confirmed cash enrollment for ${purchase.planSnapshot.name}. Payment is pending.`
+        : `${purchase.fullName} purchased ${purchase.planSnapshot.name} for ${session.title}.`,
       relatedUserId: client._id,
       relatedBookingId: booking._id,
       relatedScheduleId: session._id,
@@ -193,16 +211,71 @@ async function performFulfillment(purchaseId, payment = {}) {
   ]);
 
   try {
-    await sendPurchaseStatusEmailOnce(
-      purchase._id,
-      "payment_successful",
-      `payment-successful:${purchase.paymentId || purchase.referenceId}`,
-      { paymentDate: purchase.paidAt, receiptUrl: purchase.receiptUrl, qrCodeBase64 }
-    );
+    if (cashPending) await sendCashEnrollmentConfirmedEmail(purchase);
+    else await sendPurchaseStatusEmailOnce(
+        purchase._id,
+        "payment_successful",
+        `payment-successful:${purchase.paymentId || purchase.referenceId}`,
+        { paymentDate: purchase.paidAt, receiptUrl: purchase.receiptUrl, qrCodeBase64 }
+      );
   } catch (error) {
     console.warn("Guest confirmation email failed:", error.message);
   }
   return purchase.populate("session tier booking membership");
+}
+
+export async function confirmCashEnrollment(purchaseId) {
+  return performFulfillment(purchaseId, { cashPending: true });
+}
+
+export async function markCashPurchasePaid(purchaseId) {
+  const purchase = await GuestPurchase.findOne({
+    _id: purchaseId,
+    paymentMethod: "Cash",
+    status: "pending_cash_payment",
+    enrollmentStatus: "enrolled",
+  }).populate("tier session booking membership client");
+  if (!purchase) throw Object.assign(new Error("Pending cash enrollment not found."), { status: 404 });
+
+  purchase.paidAt = new Date();
+  purchase.status = purchase.booking?.status === "waitlisted" ? "waitlisted" : "confirmed";
+  purchase.paymentId ||= `cash_${purchase._id}`;
+  purchase.booking.paymentStatus = "paid";
+  purchase.membership.status = "active";
+  purchase.membership.lastEvent = "cash_payment.received";
+  await purchase.membership.save();
+  if (purchase.booking.status === "accepted" &&
+      purchase.booking.creditStatus !== "reserved" &&
+      purchase.booking.creditStatus !== "consumed") {
+    const reserved = await reserveMembershipCredit(purchase.membership._id);
+    if (!reserved) throw Object.assign(new Error("The purchased plan has no available class credit."), { status: 409 });
+    purchase.booking.creditStatus = "reserved";
+  }
+  await purchase.booking.save();
+  await purchase.save();
+  await saveSuccessfulBookingHistory({
+    client: purchase.client,
+    purchase,
+    booking: purchase.booking,
+    membership: purchase.membership,
+    session: purchase.session,
+  });
+
+  let qrCodeBase64 = "";
+  if (purchase.booking.status === "accepted") {
+    const checkInToken = await issueCheckInToken(purchase.booking._id);
+    const qrDataUrl = await QRCode.toDataURL(checkInToken, {
+      errorCorrectionLevel: "M", margin: 2, width: 440,
+    });
+    qrCodeBase64 = qrDataUrl.split(",")[1] || "";
+  }
+  await sendPurchaseStatusEmailOnce(
+    purchase._id,
+    "payment_successful",
+    `cash-paid:${purchase._id}`,
+    { paymentDate: purchase.paidAt, qrCodeBase64 }
+  ).catch((error) => console.warn("Cash payment confirmation email failed:", error.message));
+  return purchase;
 }
 
 export async function fulfillGuestPurchase(purchaseId, payment = {}) {

@@ -7,6 +7,7 @@ import { User } from "../models/User.js";
 const SUCCESSFUL_PURCHASE_STATUSES = [
   "paid",
   "pending_confirmation",
+  "pending_cash_payment",
   "confirmed",
   "waitlisted",
   "refunded",

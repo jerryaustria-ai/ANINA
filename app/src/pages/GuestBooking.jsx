@@ -75,7 +75,7 @@ export default function GuestBooking() {
     </header>
     <main className="guest-flow-main">
       <div className="guest-flow-heading"><p>Guest booking</p><h1>Choose your class package</h1>
-        <span>No account is required. Your booking is confirmed only after successful payment.</span></div>
+        <span>No account is required. Choose online payment or confirm a cash enrollment by email.</span></div>
       <div className="guest-booking-layout">
         <form className="guest-booking-form" onSubmit={submit}>
           <section className="guest-panel">

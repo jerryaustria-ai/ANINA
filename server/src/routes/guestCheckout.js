@@ -3,11 +3,19 @@ import { Router } from "express";
 import { ClassSession } from "../models/ClassSession.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { MembershipTier } from "../models/MembershipTier.js";
-import { fulfillGuestPurchase } from "../services/guestPurchase.js";
+import {
+  confirmCashEnrollment,
+  fulfillGuestPurchase,
+  markCashPurchasePaid,
+} from "../services/guestPurchase.js";
 import * as xendit from "../services/xendit.js";
 import { asyncHandler } from "../utils/http.js";
-import { sendPurchaseStatusEmailOnce } from "../services/email.js";
+import {
+  sendCashEnrollmentConfirmationEmail,
+  sendPurchaseStatusEmailOnce,
+} from "../services/email.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
+import { requireRole } from "../middleware/requireRole.js";
 import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
 import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
@@ -122,7 +130,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
 router.get("/history/mine", requireAuth, asyncHandler(async (req, res) => {
   const purchases = await GuestPurchase.find({
     client: req.user._id,
-    paidAt: { $ne: null },
+    $or: [{ paidAt: { $ne: null } }, { status: "pending_cash_payment" }],
   }).populate({
     path: "session",
     populate: [{ path: "instructor" }, { path: "room" }],
@@ -219,6 +227,131 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
     ).catch((error) => console.warn("Pending payment email failed:", error.message));
   }
   res.json({ order: purchase.toPublic(), checkoutUrl: purchase.checkoutUrl, simulated: purchase.simulated });
+}));
+
+router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
+  const purchase = await loadAuthorizedOrder(req);
+  if (purchase.status === "pending_cash_payment") return res.json({ order: purchase.toPublic() });
+  if (!safeSession(purchase.session) || !purchase.tier?.active || !matchesClass(purchase.tier, purchase.session)) {
+    return res.status(409).json({ error: "This Plan/Package is no longer available for the selected class." });
+  }
+  if (purchase.tier.firstTimerOnly && await hasPriorClientActivity(purchase.email, {
+    excludePurchaseId: purchase._id,
+  })) {
+    return res.status(409).json({ error: "This plan is available for first-time clients only.", code: "FIRST_TIMER_ONLY" });
+  }
+  const conflict = await findActiveScheduleConflict({
+    email: purchase.email, session: purchase.session, tier: purchase.tier,
+    excludePurchaseId: purchase._id,
+  });
+  if (conflict) return res.status(409).json({
+    error: "You already have an active class with the same validity period, date, and time.",
+    code: "ACTIVE_SCHEDULE_CONFLICT",
+  });
+  if (!purchase.duplicateOverrideBy && await findActiveDuplicate({
+    email: purchase.email, session: purchase.session, tier: purchase.tier,
+  })) return res.status(409).json({
+    error: "You already have an active booking or class plan matching this selection.",
+    code: "DUPLICATE_ACTIVE_PURCHASE",
+  });
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  purchase.cashConfirmationTokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  purchase.cashConfirmationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  purchase.cashConfirmationUsedAt = null;
+  purchase.paymentMethod = "Cash";
+  purchase.status = "pending_email_confirmation";
+  purchase.enrollmentStatus = "pending_email_confirmation";
+  await purchase.save();
+
+  const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
+  const protocol = String(req.get("x-forwarded-proto") || req.protocol).split(",")[0].trim();
+  const host = req.get("x-forwarded-host") || req.get("host");
+  const appUrl = (/^https:\/\//i.test(configured) ? configured : `${protocol}://${host}`).replace(/\/$/, "");
+  const confirmationUrl = `${appUrl}/guest/cash-confirm?token=${encodeURIComponent(rawToken)}`;
+  const email = await sendCashEnrollmentConfirmationEmail(purchase, confirmationUrl);
+  purchase.emailStatus = email.status;
+  purchase.emailMessageId = email.id;
+  await purchase.save();
+  res.json({ order: purchase.toPublic(), emailStatus: email.status });
+}));
+
+router.post("/cash-confirm", asyncHandler(async (req, res) => {
+  const rawToken = String(req.body.token || "");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const existing = await GuestPurchase.findOne({ cashConfirmationTokenHash: tokenHash })
+    .populate("tier session");
+  if (!existing || !rawToken) return res.status(404).json({ error: "This confirmation link is invalid." });
+  if (existing.cashConfirmationUsedAt || existing.enrollmentStatus === "enrolled") {
+    return res.status(409).json({
+      error: "This enrollment has already been confirmed.",
+      code: "CASH_CONFIRM_ALREADY_USED",
+      orderId: existing._id,
+    });
+  }
+  if (!existing.cashConfirmationExpiresAt || existing.cashConfirmationExpiresAt <= new Date()) {
+    existing.status = "expired";
+    existing.enrollmentStatus = "expired";
+    await existing.save();
+    return res.status(410).json({ error: "This confirmation link has expired.", code: "CASH_CONFIRM_EXPIRED" });
+  }
+  if (!existing.tier?.active || !safeSession(existing.session) || !matchesClass(existing.tier, existing.session)) {
+    return res.status(409).json({ error: "This Plan/Package is no longer available." });
+  }
+  if (existing.tier.firstTimerOnly && await hasPriorClientActivity(existing.email, {
+    excludePurchaseId: existing._id,
+  })) return res.status(409).json({
+    error: "This plan is available for first-time clients only.", code: "FIRST_TIMER_ONLY",
+  });
+  if (await findActiveScheduleConflict({
+    email: existing.email, session: existing.session, tier: existing.tier,
+    excludePurchaseId: existing._id,
+  })) return res.status(409).json({
+    error: "You already have an active class with the same validity period, date, and time.",
+    code: "ACTIVE_SCHEDULE_CONFLICT",
+  });
+  if (!existing.duplicateOverrideBy && await findActiveDuplicate({
+    email: existing.email, session: existing.session, tier: existing.tier,
+  })) return res.status(409).json({
+    error: "You already have an active booking or class plan matching this selection.",
+    code: "DUPLICATE_ACTIVE_PURCHASE",
+  });
+
+  const claimed = await GuestPurchase.findOneAndUpdate({
+    _id: existing._id,
+    cashConfirmationUsedAt: null,
+    cashConfirmationExpiresAt: { $gt: new Date() },
+    status: "pending_email_confirmation",
+  }, {
+    $set: {
+      cashConfirmationUsedAt: new Date(),
+      cashConfirmedAt: new Date(),
+      status: "cash_confirmation_processing",
+      enrollmentStatus: "confirmed",
+    },
+  }, { new: true });
+  if (!claimed) {
+    return res.status(409).json({ error: "This enrollment has already been confirmed.", code: "CASH_CONFIRM_ALREADY_USED" });
+  }
+  try {
+    const order = await confirmCashEnrollment(claimed._id);
+    res.json({ order: order.toPublic() });
+  } catch (error) {
+    await GuestPurchase.updateOne({ _id: claimed._id, booking: null }, {
+      $set: {
+        cashConfirmationUsedAt: null,
+        cashConfirmedAt: null,
+        status: "pending_email_confirmation",
+        enrollmentStatus: "pending_email_confirmation",
+      },
+    });
+    throw error;
+  }
+}));
+
+router.post("/orders/:id/mark-cash-paid", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const purchase = await markCashPurchasePaid(req.params.id);
+  res.json({ order: purchase.toPublic(), message: "Cash payment marked as Paid." });
 }));
 
 router.post("/orders/:id/simulate-success", asyncHandler(async (req, res) => {

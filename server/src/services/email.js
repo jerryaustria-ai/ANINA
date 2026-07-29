@@ -201,3 +201,43 @@ export async function sendPurchaseStatusEmailOnce(purchaseId, type, eventKey, de
     throw error;
   }
 }
+
+async function sendCashEmail(purchase, { subject, heading, message, actionUrl = "", actionLabel = "" }) {
+  if (!transporter) return { status: "skipped", id: "" };
+  const result = await transporter.sendMail({
+    from: FROM,
+    to: purchase.email,
+    subject,
+    html: `<!doctype html><html><body style="margin:0;background:#f5f1eb;font-family:Arial,sans-serif;color:#2d2925">
+      <div style="max-width:620px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e4ddd4;border-radius:12px">
+        <div style="font:600 24px Georgia,serif;letter-spacing:7px;color:#55493e">ANINA</div>
+        <h1 style="font:400 30px Georgia,serif">${escape(heading)}</h1>
+        <p style="line-height:1.65;color:#5c554e">${escape(message)}</p>
+        <p><strong>Booking reference:</strong> ${escape(purchase.referenceId)}<br>
+          <strong>Plan:</strong> ${escape(purchase.planSnapshot?.name)}<br>
+          <strong>Class:</strong> ${escape(purchase.session?.title || "")}<br>
+          <strong>Amount:</strong> ${escape(money(purchase.totalAmount, purchase.currency))}</p>
+        ${actionUrl ? `<p style="margin:26px 0"><a href="${escape(actionUrl)}" style="display:inline-block;padding:13px 20px;background:#586951;color:#fff;text-decoration:none;border-radius:6px">${escape(actionLabel)}</a></p>` : ""}
+        <p style="font-size:12px;color:#776f67">Need help? Contact ${escape(SUPPORT_EMAIL)}.</p>
+      </div></body></html>`,
+  });
+  return { status: "sent", id: result.messageId || "" };
+}
+
+export async function sendCashEnrollmentConfirmationEmail(purchase, confirmationUrl) {
+  return sendCashEmail(purchase, {
+    subject: `Confirm your cash enrollment — ${purchase.referenceId}`,
+    heading: "Confirm your enrollment",
+    message: "You selected Cash Payment. Confirm your enrollment within 24 hours. Payment will remain pending until ANINA receives and verifies your cash payment.",
+    actionUrl: confirmationUrl,
+    actionLabel: "Confirm Enrollment",
+  });
+}
+
+export async function sendCashEnrollmentConfirmedEmail(purchase) {
+  return sendCashEmail(purchase, {
+    subject: `Enrollment confirmed — ${purchase.referenceId}`,
+    heading: "Your enrollment is confirmed",
+    message: "Your plan enrollment was created successfully. Your payment status is Pending Cash Payment until an Admin confirms receipt of your payment.",
+  });
+}

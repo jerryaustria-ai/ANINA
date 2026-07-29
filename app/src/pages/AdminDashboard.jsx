@@ -1596,6 +1596,14 @@ function MembershipsView() {
   const [list, setList] = useState([]);
   const load = () => api("/memberships").then(({ memberships }) => setList(memberships));
   useEffect(() => { load(); }, []);
+  async function markCashPaid(record) {
+    if (!window.confirm(`Mark cash payment for ${record.client?.name || "this client"} as Paid?`)) return;
+    try {
+      await api(`/guest-checkout/orders/${record.id}/mark-cash-paid`, { method: "POST" });
+      toast.success("Cash payment marked as Paid.");
+      await load();
+    } catch (error) { toast.error(error.message); }
+  }
   const date = (value) => value ? new Date(value).toLocaleDateString("en-PH", { dateStyle: "medium" }) : "—";
   const tag = (status) => status === "Active" ? "accepted"
     : status === "Fully Used" ? "pending"
@@ -1609,7 +1617,7 @@ function MembershipsView() {
           <table className="purchase-table">
             <thead><tr><th>Client</th><th>Membership / Plan</th><th>Class</th><th>Amount</th>
               <th>Billing Cycle</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
-              <th>Payment</th><th>Plan Status</th></tr></thead>
+              <th>Payment</th><th>Plan Status</th><th>Action</th></tr></thead>
             <tbody>{list.map((record) => <tr key={record.id}>
               <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
                 <small>{record.client?.email}</small></td>
@@ -1622,6 +1630,9 @@ function MembershipsView() {
               <td>{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
               <td><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>
               <td><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
+              <td>{record.paymentStatus === "Pending Cash Payment"
+                ? <button className="btn sm" onClick={() => markCashPaid(record)}>Mark as Paid</button>
+                : "—"}</td>
             </tr>)}</tbody>
           </table>
         </div>

@@ -57,14 +57,17 @@ function oneTimePurchaseRecord(purchase) {
   const reserved = membership?.sessionsReserved || 0;
   const expirationDate = purchaseValidityEnd(purchase);
   const startDate = purchase.paidAt || membership?.createdAt || purchase.createdAt;
-  const paymentStatus = purchase.refundedAt ? "Refunded" : purchase.paidAt ? "Paid" : "Pending";
+  const paymentStatus = purchase.refundedAt ? "Refunded"
+    : purchase.paidAt ? "Paid"
+      : purchase.status === "pending_cash_payment" ? "Pending Cash Payment" : "Pending";
   const now = new Date();
   const classEnded = !!session?.endAt && new Date(session.endAt) <= now;
   const attendanceStatus = booking?.status === "attended" ? "present"
     : booking?.status === "no_show" && (!booking?.attendanceStatus || booking.attendanceStatus === "pending") ? "no_show"
       : booking?.attendanceStatus || "pending";
   let planStatus = "Active";
-  if (paymentStatus !== "Paid") planStatus = "Inactive";
+  if (paymentStatus === "Pending Cash Payment") planStatus = "Enrolled";
+  else if (paymentStatus !== "Paid") planStatus = "Inactive";
   else if (purchase.refundedAt) planStatus = "Inactive";
   else if (membership && ["cancelled", "inactive"].includes(membership.status)) {
     planStatus = membership.status === "cancelled" ? "Cancelled" : "Inactive";
@@ -320,7 +323,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const [purchases, recurringMemberships] = await Promise.all([
       GuestPurchase.find({
-        paidAt: { $ne: null },
+        $or: [{ paidAt: { $ne: null } }, { status: "pending_cash_payment" }],
         client: { $ne: null },
         membership: { $ne: null },
       }).sort("-paidAt -createdAt").populate(purchasePopulate),
@@ -346,7 +349,7 @@ router.get(
     const [purchases, recurringMemberships, bookings] = await Promise.all([
       GuestPurchase.find({
         client: client._id,
-        paidAt: { $ne: null },
+        $or: [{ paidAt: { $ne: null } }, { status: "pending_cash_payment" }],
       }).sort("-paidAt -createdAt").populate(purchasePopulate),
       Membership.find({ client: client._id, source: "membership" }).populate("tier")
         .populate("client", "name email phone picture active createdAt").sort("-createdAt"),
