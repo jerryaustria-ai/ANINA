@@ -6,7 +6,7 @@ const bookingHistorySchema = new mongoose.Schema(
   {
     purchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", required: true },
     booking: { type: mongoose.Schema.Types.ObjectId, ref: "Booking", required: true },
-    membership: { type: mongoose.Schema.Types.ObjectId, ref: "Membership", required: true },
+    membership: { type: mongoose.Schema.Types.ObjectId, ref: "Membership", default: null },
     bookingReference: { type: String, required: true },
     customerName: { type: String, required: true },
     email: { type: String, required: true },

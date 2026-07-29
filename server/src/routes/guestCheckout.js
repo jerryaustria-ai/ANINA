@@ -11,10 +11,7 @@ import {
 } from "../services/guestPurchase.js";
 import * as xendit from "../services/xendit.js";
 import { asyncHandler } from "../utils/http.js";
-import {
-  sendCashEnrollmentConfirmationEmail,
-  sendPurchaseStatusEmailOnce,
-} from "../services/email.js";
+import { sendPurchaseStatusEmailOnce } from "../services/email.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
@@ -64,9 +61,26 @@ router.get("/plans", asyncHandler(async (req, res) => {
   const session = await ClassSession.findById(req.query.sessionId).populate("instructor room classDefinition");
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   const tiers = await MembershipTier.find({ active: true }).sort({ sortOrder: 1, amount: 1 });
+  const eligibleTiers = tiers.filter((tier) => matchesClass(tier, session));
+  const legacyCashTier = eligibleTiers.find((tier) => /\bcash\b/i.test(tier.name));
+  const plans = eligibleTiers.filter((tier) => tier !== legacyCashTier).map((tier) => tier.toPublic());
+  const cashPrice = Number(session.classDefinition?.cashPrice || legacyCashTier?.amount || 0);
+  if (cashPrice > 0) plans.push({
+    id: "cash",
+    name: "Regular Class — Cash Payment",
+    description: "Book this class without an active plan. Pay at ANINA before attending.",
+    amount: cashPrice,
+    currency: "PHP",
+    interval: "DAY",
+    intervalCount: 1,
+    sessionCount: 1,
+    unlimitedClasses: false,
+    firstTimerOnly: false,
+    directCash: true,
+  });
   res.json({
     session: session.toPublic(),
-    plans: tiers.filter((tier) => matchesClass(tier, session)).map((tier) => tier.toPublic()),
+    plans,
     vatRate: VAT_RATE,
   });
 }));
@@ -79,20 +93,48 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Please enter a valid email address." });
   if (phone.length < 7) return res.status(400).json({ error: "Please enter a valid phone number." });
 
+  const directCash = req.body.tierId === "cash";
   const [session, tier] = await Promise.all([
     ClassSession.findById(req.body.sessionId).populate("instructor room classDefinition"),
-    MembershipTier.findOne({ _id: req.body.tierId, active: true }),
+    directCash ? null : MembershipTier.findOne({ _id: req.body.tierId, active: true }),
   ]);
   if (!safeSession(session)) return res.status(409).json({ error: "This class is no longer available for booking." });
-  if (!tier || !matchesClass(tier, session)) return res.status(400).json({ error: "The selected plan is not available for this class." });
-  if (tier.firstTimerOnly && await hasPriorClientActivity(email)) {
+  const legacyCashTier = directCash && !Number(session.classDefinition?.cashPrice)
+    ? await MembershipTier.findOne({
+        active: true,
+        eligibleClassIds: session.classDefinition._id,
+        name: { $regex: "\\bcash\\b", $options: "i" },
+      }).sort("amount")
+    : null;
+  const cashPrice = Number(session.classDefinition?.cashPrice || legacyCashTier?.amount || 0);
+  if (directCash && cashPrice <= 0) {
+    return res.status(400).json({ error: "Cash Payment is not configured for this class." });
+  }
+  if (!directCash && (!tier || !matchesClass(tier, session))) {
+    return res.status(400).json({ error: "The selected plan is not available for this class." });
+  }
+  const selectedPlan = directCash ? {
+    _id: null,
+    name: "Regular Class — Cash Payment",
+    description: "Direct cash booking",
+    amount: cashPrice,
+    currency: "PHP",
+    interval: "DAY",
+    intervalCount: 1,
+    sessionCount: 1,
+    unlimitedClasses: false,
+    firstTimerOnly: false,
+    eligibleClassIds: [session.classDefinition._id],
+    classTags: [],
+  } : tier;
+  if (selectedPlan.firstTimerOnly && await hasPriorClientActivity(email)) {
     return res.status(409).json({
       error: "This plan is available for first-time clients only.",
       code: "FIRST_TIMER_ONLY",
     });
   }
 
-  const scheduleConflict = await findActiveScheduleConflict({ email, session, tier });
+  const scheduleConflict = await findActiveScheduleConflict({ email, session, tier: selectedPlan });
   if (scheduleConflict) {
     return res.status(409).json({
       error: "You already have an active class with the same validity period, date, and time.",
@@ -101,7 +143,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
     });
   }
 
-  const duplicate = await findActiveDuplicate({ email, session, tier });
+  const duplicate = await findActiveDuplicate({ email, session, tier: selectedPlan });
   const adminOverrideEnabled = process.env.ALLOW_ADMIN_DUPLICATE_PURCHASE === "true";
   const mayOverride = adminOverrideEnabled && req.user?.role === "admin";
   const overrideRequested = mayOverride && req.body.continueAnyway === true;
@@ -113,11 +155,12 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
     });
   }
 
-  const { subtotal, vatAmount, totalAmount } = vatInclusiveBreakdown(tier.amount);
+  const { subtotal, vatAmount, totalAmount } = vatInclusiveBreakdown(selectedPlan.amount);
   const purchase = await GuestPurchase.create({
-    fullName, email, phone, session: session._id, tier: tier._id,
-    planSnapshot: planSnapshot(tier),
-    subtotal, vatAmount, totalAmount, currency: tier.currency,
+    fullName, email, phone, session: session._id, tier: tier?._id || null,
+    planSnapshot: directCash ? { ...selectedPlan, id: "cash", _id: undefined, directCash: true }
+      : planSnapshot(tier),
+    subtotal, vatAmount, totalAmount, currency: selectedPlan.currency,
     referenceId: `guest_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`,
     accessToken: crypto.randomBytes(24).toString("hex"),
     duplicateOverrideBy: overrideRequested ? req.user._id : null,
@@ -234,16 +277,20 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
 router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
   if (purchase.status === "pending_cash_payment") return res.json({ order: purchase.toPublic() });
-  if (!safeSession(purchase.session) || !purchase.tier?.active || !matchesClass(purchase.tier, purchase.session)) {
+  const directCash = purchase.planSnapshot?.directCash === true;
+  const selectedPlan = directCash ? purchase.planSnapshot : purchase.tier;
+  const directCashAvailable = directCash && Number(purchase.session?.classDefinition?.cashPrice || purchase.totalAmount) > 0;
+  if (!safeSession(purchase.session) ||
+      (!directCashAvailable && (!purchase.tier?.active || !matchesClass(purchase.tier, purchase.session)))) {
     return res.status(409).json({ error: "This Plan/Package is no longer available for the selected class." });
   }
-  if (purchase.tier.firstTimerOnly && await hasPriorClientActivity(purchase.email, {
+  if (selectedPlan.firstTimerOnly && await hasPriorClientActivity(purchase.email, {
     excludePurchaseId: purchase._id,
   })) {
     return res.status(409).json({ error: "This plan is available for first-time clients only.", code: "FIRST_TIMER_ONLY" });
   }
   const conflict = await findActiveScheduleConflict({
-    email: purchase.email, session: purchase.session, tier: purchase.tier,
+    email: purchase.email, session: purchase.session, tier: selectedPlan,
     excludePurchaseId: purchase._id,
   });
   if (conflict) return res.status(409).json({
@@ -251,71 +298,26 @@ router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
     code: "ACTIVE_SCHEDULE_CONFLICT",
   });
   if (!purchase.duplicateOverrideBy && await findActiveDuplicate({
-    email: purchase.email, session: purchase.session, tier: purchase.tier,
+    email: purchase.email, session: purchase.session, tier: selectedPlan,
   })) return res.status(409).json({
     error: "You already have an active booking or class plan matching this selection.",
     code: "DUPLICATE_ACTIVE_PURCHASE",
   });
 
-  const rawToken = crypto.randomBytes(32).toString("hex");
-  purchase.cashConfirmationTokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-  purchase.cashConfirmationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  purchase.cashConfirmationUsedAt = null;
   purchase.paymentMethod = "Cash";
-  purchase.status = "pending_email_confirmation";
-  purchase.enrollmentStatus = "pending_email_confirmation";
+  purchase.status = "pending_payment";
+  purchase.enrollmentStatus = null;
+  purchase.cashConfirmationTokenHash = undefined;
+  purchase.cashConfirmationExpiresAt = null;
   await purchase.save();
-
-  const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
-  const protocol = String(req.get("x-forwarded-proto") || req.protocol).split(",")[0].trim();
-  const host = req.get("x-forwarded-host") || req.get("host");
-  const appUrl = (/^https:\/\//i.test(configured) ? configured : `${protocol}://${host}`).replace(/\/$/, "");
-  const confirmationUrl = `${appUrl}/guest/cash-confirm?token=${encodeURIComponent(rawToken)}`;
   try {
-    const email = await sendCashEnrollmentConfirmationEmail(purchase, confirmationUrl);
-    if (email.status !== "sent") {
-      purchase.status = "pending_payment";
-      purchase.enrollmentStatus = null;
-      purchase.cashConfirmationTokenHash = undefined;
-      purchase.cashConfirmationExpiresAt = null;
-      purchase.emailStatus = "skipped";
-      await purchase.save();
-      return res.status(503).json({
-        error: "Confirmation email is not configured on the server. Please contact ANINA.",
-        code: "CASH_EMAIL_NOT_CONFIGURED",
-      });
-    }
-    purchase.emailStatus = "sent";
-    purchase.emailMessageId = email.id;
-    purchase.emailEvents.push({
-      eventKey: `cash-confirmation:${purchase.cashConfirmationTokenHash}`,
-      notificationType: "cash_enrollment_confirmation",
-      status: "sent",
-      messageId: email.id,
-      sentAt: new Date(),
-      error: "",
+    const pending = await confirmCashEnrollment(purchase._id);
+    res.json({
+      order: pending.toPublic(),
+      message: "Cash booking created. Payment is pending until confirmed by an Admin.",
     });
-    await purchase.save();
-    res.json({ order: purchase.toPublic(), emailStatus: "sent" });
   } catch (error) {
-    purchase.status = "pending_payment";
-    purchase.enrollmentStatus = null;
-    purchase.cashConfirmationTokenHash = undefined;
-    purchase.cashConfirmationExpiresAt = null;
-    purchase.emailStatus = "failed";
-    purchase.emailEvents.push({
-      eventKey: `cash-confirmation-failed:${Date.now()}`,
-      notificationType: "cash_enrollment_confirmation",
-      status: "failed",
-      messageId: "",
-      sentAt: new Date(),
-      error: error.message,
-    });
-    await purchase.save();
-    return res.status(502).json({
-      error: `Confirmation email could not be sent: ${error.message}`,
-      code: "CASH_EMAIL_FAILED",
-    });
+    return res.status(error.status || 500).json({ error: error.message, code: "CASH_BOOKING_FAILED" });
   }
 }));
 
@@ -430,7 +432,7 @@ router.get("/cash-payments", requireAuth, requireRole("admin"), asyncHandler(asy
     bookingDate: purchase.createdAt,
     paymentMethod: purchase.paymentMethod,
     paymentStatus: purchase.paidAt ? "paid" : purchase.status === "cancelled" ? "cancelled" : "pending",
-    enrollmentStatus: purchase.membership?.status === "active" ? "active"
+    enrollmentStatus: purchase.paidAt || purchase.membership?.status === "active" ? "active"
       : purchase.enrollmentStatus || "pending_email_confirmation",
     paidAt: purchase.paidAt,
     paidBy: purchase.paidBy,

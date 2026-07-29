@@ -180,7 +180,8 @@ export default function ClientDashboard() {
       </div>
       {!canBook && (
         <div className="status-notice warning">
-          You need an active class plan to book classes. <Link to="/schedule">View classes and plans →</Link>
+          You do not have an active eligible class plan. You may still book using Cash Payment.{" "}
+          <Link to="/schedule">View available classes →</Link>
         </div>
       )}
       {membership?.activeNow && membership.source === "guest_checkout" && (
@@ -208,7 +209,7 @@ export default function ClientDashboard() {
               <h3>{b.session.title}</h3>
               <div className="sub">{fmtRange(b.session.startAt, b.session.endAt)}</div>
               <div className="sub">{b.session.instructor?.name} · {b.session.room?.name}</div>
-              {b.paymentStatus === "paid" && <div className="sub">Payment: Paid</div>}
+              <div className="sub">Payment: {b.paymentStatus === "paid" ? "Paid" : "Pending"}</div>
               <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status]}</span>
                 <span style={{ display: "flex", gap: "0.4rem" }}>
@@ -277,7 +278,7 @@ export default function ClientDashboard() {
             : selUnavailable
               ? <button className="btn" disabled>{selUnavailable === "cancelled" ? "Class Cancelled" : "Class Finished"}</button>
             : !canBook
-              ? <Link className="btn clay" to="/schedule">Class plan required — View Classes</Link>
+              ? <Link className="btn clay" to={`/guest/book/${sel.id}`}>Book with Cash Payment</Link>
               : <button className="btn" onClick={book} disabled={busy || !!selUnavailable}>
                   {selUnavailable === "cancelled" ? "Class Cancelled"
                     : selUnavailable === "finished" ? "Class Finished"

@@ -48,11 +48,11 @@ async function findOrCreateCustomer(purchase) {
 }
 
 async function saveSuccessfulBookingHistory({ client, purchase, booking, membership, session }) {
-  const tier = purchase.tier;
+  const tier = purchase.tier || purchase.planSnapshot;
   const history = {
     purchase: purchase._id,
     booking: booking._id,
-    membership: membership._id,
+    membership: membership?._id || null,
     bookingReference: purchase.referenceId,
     customerName: purchase.fullName,
     email: purchase.email,
@@ -65,7 +65,7 @@ async function saveSuccessfulBookingHistory({ client, purchase, booking, members
     unlimitedClasses: !!tier.unlimitedClasses,
     validityInterval: tier.interval,
     validityIntervalCount: tier.intervalCount || 1,
-    validUntil: membership.currentPeriodEnd,
+    validUntil: membership?.currentPeriodEnd || null,
     amountPaid: purchase.totalAmount,
     currency: purchase.currency,
     paymentMethod: purchase.paymentMethod || "Xendit",
@@ -104,15 +104,15 @@ async function performFulfillment(purchaseId, payment = {}) {
   let booking = await Booking.findOne({ session: session._id, client: client._id });
   let bookingStatus = booking?.status;
   if (!booking || !["accepted", "waitlisted"].includes(booking.status)) {
-    const seat = await claimSeat(session._id);
-    bookingStatus = seat ? "accepted" : "waitlisted";
+    const seat = cashPending ? null : await claimSeat(session._id);
+    bookingStatus = cashPending ? "pending" : seat ? "accepted" : "waitlisted";
     booking = await Booking.findOneAndUpdate(
       { session: session._id, client: client._id },
       {
         $set: {
           status: bookingStatus,
           source: "guest_checkout",
-          paymentStatus: cashPending ? "pending" : "paid",
+          paymentStatus: cashPending ? "unpaid" : "paid",
           purchase: purchase._id,
           note: cashPending
             ? "Created after cash enrollment email confirmation; payment is pending."
@@ -130,7 +130,7 @@ async function performFulfillment(purchaseId, payment = {}) {
   let membership = purchase.membership
     ? await Membership.findById(purchase.membership)
     : null;
-  if (!membership) {
+  if (!membership && purchase.tier) {
     const included = purchase.tier.unlimitedClasses ? null : (purchase.tier.sessionCount || 1);
     membership = await Membership.create({
       client: client._id,
@@ -150,25 +150,25 @@ async function performFulfillment(purchaseId, payment = {}) {
       simulated: purchase.simulated,
     });
   }
-  if (!cashPending && bookingStatus === "accepted" &&
+  if (!cashPending && membership && bookingStatus === "accepted" &&
       booking.creditStatus !== "reserved" && booking.creditStatus !== "consumed") {
     const reserved = await reserveMembershipCredit(membership._id);
     if (!reserved) throw Object.assign(new Error("The purchased plan has no available class credit."), { status: 409 });
     booking.membership = membership._id;
     booking.creditStatus = "reserved";
     await booking.save();
-  } else if (!booking.membership) {
+  } else if (membership && !booking.membership) {
     booking.membership = membership._id;
     await booking.save();
   }
 
   purchase.client = client._id;
   purchase.booking = booking._id;
-  purchase.membership = membership._id;
+  purchase.membership = membership?._id || null;
   purchase.status = cashPending
     ? "pending_cash_payment"
     : bookingStatus === "accepted" ? "confirmed" : "waitlisted";
-  purchase.enrollmentStatus = "enrolled";
+  purchase.enrollmentStatus = cashPending ? "confirmed" : "enrolled";
   await purchase.save();
   if (!cashPending) {
     await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
@@ -188,10 +188,10 @@ async function performFulfillment(purchaseId, payment = {}) {
     createNotification({
       recipient: client,
       type: "BOOKING_CONFIRMED",
-      title: cashPending ? "Cash Enrollment Confirmed"
+      title: cashPending ? "Cash Booking Pending Payment"
         : bookingStatus === "accepted" ? "Booking Confirmed" : "Added to Waitlist",
       message: cashPending
-        ? `${session.title} is enrolled with Pending Cash Payment.`
+        ? `${session.title} was saved as Pending Payment. Pay at the studio before class.`
         : `${session.title} payment was received.`,
       relatedBookingId: booking._id,
       relatedScheduleId: session._id,
@@ -199,9 +199,9 @@ async function performFulfillment(purchaseId, payment = {}) {
     }),
     notifyAdmins({
       type: "BOOKING_CONFIRMED",
-      title: cashPending ? "Cash Enrollment Confirmed" : "Guest Booking Paid",
+      title: cashPending ? "New Pending Cash Payment" : "Guest Booking Paid",
       message: cashPending
-        ? `${purchase.fullName} confirmed cash enrollment for ${purchase.planSnapshot.name}. Payment is pending.`
+        ? `${purchase.fullName} booked ${session.title} with Cash Payment. Payment is pending.`
         : `${purchase.fullName} purchased ${purchase.planSnapshot.name} for ${session.title}.`,
       relatedUserId: client._id,
       relatedBookingId: booking._id,
@@ -237,18 +237,27 @@ export async function markCashPurchasePaid(purchaseId, { actorId, paymentReferen
   }).populate("tier session booking membership client");
   if (!purchase) throw Object.assign(new Error("Pending cash enrollment not found."), { status: 404 });
 
+  const seat = purchase.booking.status === "pending"
+    ? await claimSeat(purchase.session._id)
+    : null;
+  if (purchase.booking.status === "pending") {
+    purchase.booking.status = seat ? "accepted" : "waitlisted";
+  }
   purchase.paidAt = new Date();
   purchase.paidBy = actorId || null;
   purchase.paymentReference = String(paymentReference || "").trim();
   purchase.paymentNotes = String(notes || "").trim();
-  purchase.status = purchase.booking?.status === "waitlisted" ? "waitlisted" : "confirmed";
+  purchase.status = purchase.booking.status === "waitlisted" ? "waitlisted" : "confirmed";
+  purchase.enrollmentStatus = "enrolled";
   purchase.paymentId ||= `cash_${purchase._id}`;
   purchase.booking.paymentStatus = "paid";
-  purchase.membership.status = "active";
-  purchase.membership.currentPeriodEnd = periodEnd(purchase.tier);
-  purchase.membership.lastEvent = "cash_payment.received";
-  await purchase.membership.save();
-  if (purchase.booking.status === "accepted" &&
+  if (purchase.membership) {
+    purchase.membership.status = "active";
+    purchase.membership.currentPeriodEnd = periodEnd(purchase.tier);
+    purchase.membership.lastEvent = "cash_payment.received";
+    await purchase.membership.save();
+  }
+  if (purchase.membership && purchase.booking.status === "accepted" &&
       purchase.booking.creditStatus !== "reserved" &&
       purchase.booking.creditStatus !== "consumed") {
     const reserved = await reserveMembershipCredit(purchase.membership._id);

@@ -7,7 +7,7 @@ const guestPurchaseSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, trim: true, index: true },
     phone: { type: String, required: true, trim: true },
     session: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSession", required: true, index: true },
-    tier: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipTier", required: true },
+    tier: { type: mongoose.Schema.Types.ObjectId, ref: "MembershipTier", default: null },
     planSnapshot: { type: mongoose.Schema.Types.Mixed, required: true },
     subtotal: { type: Number, required: true },
     vatAmount: { type: Number, default: 0 },

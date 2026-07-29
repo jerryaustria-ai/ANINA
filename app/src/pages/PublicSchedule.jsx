@@ -90,7 +90,7 @@ export default function PublicSchedule() {
       return;
     }
     if (user.role === "client") {
-      navigate(`/dashboard?schedule=${session.id}`);
+      navigate(`/guest/book/${session.id}`);
       return;
     }
     toast.info("Booking is available to Client accounts.");

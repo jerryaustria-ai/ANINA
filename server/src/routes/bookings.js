@@ -247,11 +247,12 @@ router.post(
       existing.note = note || "";
       existing.membership = membership._id;
       existing.creditStatus = "none";
+      existing.paymentStatus = "paid";
       booking = await existing.save();
     } else {
       booking = await Booking.create({
         session: sessionId, client: clientId, membership: membership._id,
-        note: note || "", status: "pending", creditStatus: "none",
+        note: note || "", status: "pending", creditStatus: "none", paymentStatus: "paid",
       });
     }
     await recordBookingAudit({
@@ -315,6 +316,7 @@ router.post(
       booking.note = note;
       booking.membership = membership._id;
       booking.creditStatus = "reserved";
+      booking.paymentStatus = "paid";
       await booking.save();
       await recordBookingAudit({
         booking, session, actor: req.user, action: "BOOKING_CREATED",
@@ -360,6 +362,12 @@ router.post(
     const booking = await loadForDecision(req);
     assertScheduleBookable(booking.session);
     if (booking.status === "accepted") return res.json({ booking: booking.toPublic() });
+    if (booking.paymentStatus !== "paid") {
+      throw new HttpError(
+        409,
+        "Payment is still pending. Please complete your payment before the booking can be confirmed."
+      );
+    }
     const previous = booking.toObject({ depopulate: true });
 
     const seat = await claimSeat(booking.session._id);

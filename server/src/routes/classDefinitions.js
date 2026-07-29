@@ -58,6 +58,7 @@ async function validate(body, existing = null) {
   const capacity = type === "private" ? 1 : requestedCapacity;
   const requestedMinimum = Number(body.defaultMinToRun ?? existing?.defaultMinToRun ?? 1);
   const minimum = type === "private" ? 1 : requestedMinimum;
+  const cashPrice = Number(body.cashPrice ?? existing?.cashPrice ?? 0);
   if (!title) throw new HttpError(400, "Class title is required.");
   if (!["group", "private"].includes(type)) throw new HttpError(400, "Class type is invalid.");
   if (!Number.isInteger(capacity) || capacity < 1) throw new HttpError(400, "Capacity must be greater than zero.");
@@ -67,7 +68,10 @@ async function validate(body, existing = null) {
   if (!Number.isInteger(minimum) || minimum < 1 || minimum > capacity) {
     throw new HttpError(400, "Minimum participants must be between 1 and the class capacity.");
   }
-  return { title, type, capacity, minimum, roomId };
+  if (!Number.isFinite(cashPrice) || cashPrice < 0) {
+    throw new HttpError(400, "Regular cash price must be zero or greater.");
+  }
+  return { title, type, capacity, minimum, cashPrice, roomId };
 }
 
 router.post(
@@ -84,6 +88,7 @@ router.post(
       defaultRoom: values.roomId,
       defaultCapacity: values.capacity,
       defaultMinToRun: values.minimum,
+      cashPrice: values.cashPrice,
       active: req.body.active !== false,
     });
     await createAuditLog({
@@ -115,6 +120,7 @@ router.patch(
     item.defaultRoom = values.roomId;
     item.defaultCapacity = values.capacity;
     item.defaultMinToRun = values.minimum;
+    item.cashPrice = values.cashPrice;
     if (req.body.active !== undefined) item.active = !!req.body.active;
     await item.save();
     await ClassSession.updateMany({

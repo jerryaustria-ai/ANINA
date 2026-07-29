@@ -961,7 +961,7 @@ function ScheduleApprovalView() {
 /* ---------- Official class titles ---------- */
 const blankClassTitle = {
   title: "", description: "", type: "group", defaultRoom: "",
-  defaultCapacity: 8, defaultMinToRun: 1, active: true,
+  defaultCapacity: 8, defaultMinToRun: 1, cashPrice: 0, active: true,
 };
 function ClassTitlesView() {
   const [items, setItems] = useState([]);
@@ -985,6 +985,7 @@ function ClassTitlesView() {
         defaultRoom: edit.defaultRoom?.id || edit.defaultRoom || null,
         defaultCapacity: Number(edit.defaultCapacity),
         defaultMinToRun: Number(edit.defaultMinToRun),
+        cashPrice: Number(edit.cashPrice || 0),
       };
       if (edit.id) await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
       else await api("/class-definitions", { method: "POST", body });
@@ -1029,6 +1030,7 @@ function ClassTitlesView() {
       <p className="meta-line">{item.type === "private" ? "Private 1:1" : "Group Class"}<br />
         Default room: {item.defaultRoom?.name || "Not assigned"}<br />
         Capacity: {item.defaultCapacity} · Minimum: {item.defaultMinToRun}</p>
+      <p className="meta-line">Regular cash price: {fmtMoney(item.cashPrice || 0, "PHP")}</p>
       <button className="btn ghost sm" onClick={() => setEdit({
         ...item, defaultRoom: item.defaultRoom?.id || "",
       })}>Edit</button>
@@ -1091,6 +1093,10 @@ function ClassTitlesView() {
             {!minimumIsValid && <small className="field-error">
               Minimum Participants must be between 1 and Maximum Capacity ({edit.defaultCapacity}).
             </small>}</div></div>
+        <div className="field"><label>Regular cash price</label><input type="number" min="0" step="0.01"
+          value={edit.cashPrice ?? 0}
+          onChange={(event) => setEdit({ ...edit, cashPrice: event.target.value })} />
+          <small>Used when a client books this class with Cash Payment without an active plan.</small></div>
         {edit.id && <label className="check-line"><input type="checkbox" checked={edit.active}
           onChange={(event) => setEdit({ ...edit, active: event.target.checked })} />Active</label>}
       </div>}

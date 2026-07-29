@@ -8,6 +8,7 @@ const classDefinitionSchema = new mongoose.Schema(
     defaultRoom: { type: mongoose.Schema.Types.ObjectId, ref: "Room", default: null },
     defaultCapacity: { type: Number, min: 1, default: 8 },
     defaultMinToRun: { type: Number, min: 1, default: 1 },
+    cashPrice: { type: Number, min: 0, default: 0 },
     active: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }
@@ -23,6 +24,7 @@ classDefinitionSchema.methods.toPublic = function () {
     defaultRoom: room,
     defaultCapacity: this.defaultCapacity,
     defaultMinToRun: this.defaultMinToRun,
+    cashPrice: this.cashPrice,
     active: this.active,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,

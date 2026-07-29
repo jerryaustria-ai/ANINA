@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { api, getToken } from "../api.js";
 import { fmtTime } from "../util.js";
 import Modal from "../components/Modal.jsx";
+import { useAuth } from "../auth.jsx";
 
 const money = (amount, currency = "PHP") =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(amount);
@@ -14,12 +15,23 @@ function validity(plan) {
 }
 
 export default function GuestBooking() {
+  const { user } = useAuth();
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState({ session: null, plans: [] });
   const [form, setForm] = useState({ fullName: "", email: "", phone: "", tierId: "" });
   const [state, setState] = useState({ loading: true, submitting: false, error: "" });
   const [duplicate, setDuplicate] = useState(null);
+
+  useEffect(() => {
+    if (!user || user.role !== "client") return;
+    setForm((value) => ({
+      ...value,
+      fullName: value.fullName || user.name || "",
+      email: value.email || user.email || "",
+      phone: value.phone || user.phone || "",
+    }));
+  }, [user]);
 
   useEffect(() => {
     api(`/guest-checkout/plans?sessionId=${sessionId}`)
@@ -74,8 +86,8 @@ export default function GuestBooking() {
       <Link to="/schedule">← Back to schedule</Link>
     </header>
     <main className="guest-flow-main">
-      <div className="guest-flow-heading"><p>Guest booking</p><h1>Choose your class package</h1>
-        <span>No account is required. Choose online payment or confirm a cash enrollment by email.</span></div>
+      <div className="guest-flow-heading"><p>Class booking</p><h1>Choose how to book</h1>
+        <span>No active class plan is required. Use an eligible package or book the regular class price with Cash Payment.</span></div>
       <div className="guest-booking-layout">
         <form className="guest-booking-form" onSubmit={submit}>
           <section className="guest-panel">
@@ -90,8 +102,8 @@ export default function GuestBooking() {
             </div>
           </section>
           <section className="guest-panel" id="guest-plan-selection">
-            <h2>2. Select one plan</h2>
-            {!data.plans.length && <p>No package is currently available for this class.</p>}
+            <h2>2. Select a plan or Cash Payment</h2>
+            {!data.plans.length && <p>No booking price is currently configured for this class.</p>}
             <div className="guest-plan-list">
               {data.plans.map((plan) => <label className={`guest-plan${form.tierId === plan.id ? " selected" : ""}`} key={plan.id}>
                 <input type="radio" name="tier" value={plan.id} checked={form.tierId === plan.id}
