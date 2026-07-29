@@ -17,6 +17,7 @@ export default function AdminDashboard({ view }) {
   if (view === "people") return <PeopleView />;
   if (view === "class-titles") return <ClassTitlesView />;
   if (view === "tiers") return <TiersView />;
+  if (view === "payments") return <PaymentsView />;
   if (view === "memberships") return <MembershipsView />;
   return <ScheduleView />;
 }
@@ -1589,6 +1590,135 @@ function TiersView() {
       </Modal>
     </div>
   );
+}
+
+/* ---------- Cash payments ---------- */
+function PaymentsView() {
+  const [status, setStatus] = useState("pending");
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState(null);
+  const [action, setAction] = useState(null);
+  const [form, setForm] = useState({ paymentReference: "", notes: "" });
+  const [working, setWorking] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const result = await api(`/guest-checkout/cash-payments?status=${status}`);
+      setList(result.payments);
+    } catch (error) { toast.error(error.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [status]);
+
+  const dateTime = (value) => value ? new Date(value).toLocaleString("en-PH", {
+    dateStyle: "medium", timeStyle: "short",
+  }) : "—";
+  const statusLabel = (value) => ({
+    pending: "Pending Payment", paid: "Paid", cancelled: "Cancelled",
+    active: "Active", enrolled: "Enrolled", pending_email_confirmation: "Pending Email Confirmation",
+  }[value] || String(value || "—").replaceAll("_", " "));
+
+  function openAction(type, record) {
+    setForm({ paymentReference: record.paymentReference || "", notes: "" });
+    setAction({ type, record });
+  }
+  async function submitAction() {
+    if (!action) return;
+    const isPaid = action.type === "paid";
+    const question = isPaid
+      ? `Confirm that cash payment from ${action.record.client.name} has been received?`
+      : `Cancel the pending cash payment for ${action.record.client.name}?`;
+    if (!window.confirm(question)) return;
+    setWorking(true);
+    try {
+      await api(`/guest-checkout/orders/${action.record.id}/${isPaid ? "mark-cash-paid" : "cancel-cash-payment"}`, {
+        method: "POST",
+        body: isPaid ? form : { notes: form.notes },
+      });
+      toast.success(isPaid
+        ? "Cash payment marked as Paid. Enrollment is now active."
+        : "Cash payment cancelled.");
+      setAction(null);
+      setDetail(null);
+      await load();
+    } catch (error) { toast.error(error.message); }
+    finally { setWorking(false); }
+  }
+
+  return <div className="page">
+    <div className="page-head"><div><h1>Payments</h1>
+      <p>Manage pending, paid, and cancelled cash payments.</p></div></div>
+    <div className="app-tabs payment-tabs">
+      {[["pending", "Pending Payments"], ["paid", "Paid Payments"], ["cancelled", "Cancelled Payments"]]
+        .map(([value, label]) => <button key={value} className={`app-tab${status === value ? " active" : ""}`}
+          onClick={() => setStatus(value)}>{label}</button>)}
+    </div>
+    {loading ? <div className="spinner">Loading payments…</div>
+      : !list.length ? <div className="empty">No {statusLabel(status).toLowerCase()} records.</div>
+        : <div className="purchase-table-wrap"><table className="purchase-table">
+          <thead><tr><th>Client</th><th>Plan / Package</th><th>Amount</th><th>Booking Date</th>
+            <th>Method</th><th>Payment Status</th><th>Enrollment Status</th><th>Actions</th></tr></thead>
+          <tbody>{list.map((record) => <tr key={record.id}>
+            <td><strong>{record.client.name}</strong><small>{record.client.email}</small></td>
+            <td>{record.planName}<small>{record.className}</small></td>
+            <td>{fmtMoney(record.amount, record.currency)}</td>
+            <td>{dateTime(record.bookingDate)}</td>
+            <td>{record.paymentMethod}</td>
+            <td><span className={`status-tag ${record.paymentStatus === "paid" ? "accepted"
+              : record.paymentStatus === "cancelled" ? "cancelled" : "pending"}`}>
+              {statusLabel(record.paymentStatus)}</span></td>
+            <td><span className={`status-tag ${record.enrollmentStatus === "active" ? "accepted" : "pending"}`}>
+              {statusLabel(record.enrollmentStatus)}</span></td>
+            <td><div className="table-actions">
+              <button className="btn ghost sm" onClick={() => setDetail(record)}>View</button>
+              {record.paymentStatus === "pending" && <>
+                <button className="btn sm" onClick={() => openAction("paid", record)}>Mark as Paid</button>
+                <button className="btn danger sm" onClick={() => openAction("cancel", record)}>Cancel</button>
+              </>}
+            </div></td>
+          </tr>)}</tbody>
+        </table></div>}
+
+    <Modal open={!!detail} onClose={() => setDetail(null)} title="Cash Payment Details"
+      footer={<button className="btn ghost" onClick={() => setDetail(null)}>Close</button>}>
+      {detail && <dl className="detail-list">
+        <div><dt>Client</dt><dd>{detail.client.name}</dd></div>
+        <div><dt>Email</dt><dd>{detail.client.email}</dd></div>
+        <div><dt>Phone</dt><dd>{detail.client.phone || "—"}</dd></div>
+        <div><dt>Booking Reference</dt><dd>{detail.referenceId}</dd></div>
+        <div><dt>Plan / Package</dt><dd>{detail.planName}</dd></div>
+        <div><dt>Class</dt><dd>{detail.className}</dd></div>
+        <div><dt>Instructor</dt><dd>{detail.instructorName}</dd></div>
+        <div><dt>Schedule</dt><dd>{dateTime(detail.scheduleStart)}</dd></div>
+        <div><dt>Amount</dt><dd>{fmtMoney(detail.amount, detail.currency)}</dd></div>
+        <div><dt>Payment Status</dt><dd>{statusLabel(detail.paymentStatus)}</dd></div>
+        <div><dt>Enrollment Status</dt><dd>{statusLabel(detail.enrollmentStatus)}</dd></div>
+        <div><dt>Paid Date</dt><dd>{dateTime(detail.paidAt)}</dd></div>
+        <div><dt>Paid By</dt><dd>{detail.paidBy?.name || "—"}</dd></div>
+        <div><dt>Payment Reference</dt><dd>{detail.paymentReference || "—"}</dd></div>
+        <div><dt>Notes</dt><dd>{detail.paymentNotes || detail.cancellationNotes || "—"}</dd></div>
+      </dl>}
+    </Modal>
+
+    <Modal open={!!action} onClose={() => !working && setAction(null)}
+      title={action?.type === "paid" ? "Mark Cash Payment as Paid" : "Cancel Cash Payment"}
+      footer={<><button className="btn ghost" disabled={working} onClick={() => setAction(null)}>Close</button>
+        <button className={`btn ${action?.type === "cancel" ? "danger" : ""}`} disabled={working}
+          onClick={submitAction}>{working ? "Saving…" : action?.type === "paid" ? "Mark as Paid" : "Cancel Payment"}</button></>}>
+      {action && <div className="form-grid">
+        <p className="span-2">{action.type === "paid"
+          ? `Confirm receipt of ${fmtMoney(action.record.amount, action.record.currency)} from ${action.record.client.name}.`
+          : `This will cancel the unpaid enrollment for ${action.record.client.name}.`}</p>
+        {action.type === "paid" && <div className="field span-2"><label>Payment Reference (optional)</label>
+          <input value={form.paymentReference}
+            onChange={(event) => setForm({ ...form, paymentReference: event.target.value })} /></div>}
+        <div className="field span-2"><label>Notes (optional)</label>
+          <textarea rows="3" value={form.notes}
+            onChange={(event) => setForm({ ...form, notes: event.target.value })} /></div>
+      </div>}
+    </Modal>
+  </div>;
 }
 
 /* ---------- One-time class plan purchases ---------- */

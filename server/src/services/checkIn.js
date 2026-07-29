@@ -43,7 +43,11 @@ export async function redeemCheckInToken({ token, actor, expectedSessionId = nul
   if (actor.role === "instructor" && String(booking.session?.instructor?._id) !== String(actor._id)) {
     throw Object.assign(new Error("This QR code belongs to a class assigned to another instructor."), { status: 403 });
   }
-  if (booking.paymentStatus !== "paid") throw Object.assign(new Error("This booking has not been successfully paid."), { status: 409 });
+  if (booking.paymentStatus !== "paid") {
+    throw Object.assign(new Error(
+      "Payment is still pending. Please complete your payment before attending the class."
+    ), { status: 409 });
+  }
   if (!["accepted"].includes(booking.status)) {
     throw Object.assign(new Error("This booking is cancelled, inactive, or no longer available for check-in."), { status: 409 });
   }

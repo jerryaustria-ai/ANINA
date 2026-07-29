@@ -3,7 +3,7 @@ import { ClassSession } from "../models/ClassSession.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { Membership } from "../models/Membership.js";
 import { User } from "../models/User.js";
-import { claimSeat } from "./capacity.js";
+import { claimSeat, releaseSeat } from "./capacity.js";
 import {
   sendCashEnrollmentConfirmedEmail,
   sendPurchaseStatusEmailOnce,
@@ -228,7 +228,7 @@ export async function confirmCashEnrollment(purchaseId) {
   return performFulfillment(purchaseId, { cashPending: true });
 }
 
-export async function markCashPurchasePaid(purchaseId) {
+export async function markCashPurchasePaid(purchaseId, { actorId, paymentReference = "", notes = "" } = {}) {
   const purchase = await GuestPurchase.findOne({
     _id: purchaseId,
     paymentMethod: "Cash",
@@ -238,10 +238,14 @@ export async function markCashPurchasePaid(purchaseId) {
   if (!purchase) throw Object.assign(new Error("Pending cash enrollment not found."), { status: 404 });
 
   purchase.paidAt = new Date();
+  purchase.paidBy = actorId || null;
+  purchase.paymentReference = String(paymentReference || "").trim();
+  purchase.paymentNotes = String(notes || "").trim();
   purchase.status = purchase.booking?.status === "waitlisted" ? "waitlisted" : "confirmed";
   purchase.paymentId ||= `cash_${purchase._id}`;
   purchase.booking.paymentStatus = "paid";
   purchase.membership.status = "active";
+  purchase.membership.currentPeriodEnd = periodEnd(purchase.tier);
   purchase.membership.lastEvent = "cash_payment.received";
   await purchase.membership.save();
   if (purchase.booking.status === "accepted" &&
@@ -275,6 +279,46 @@ export async function markCashPurchasePaid(purchaseId) {
     `cash-paid:${purchase._id}`,
     { paymentDate: purchase.paidAt, qrCodeBase64 }
   ).catch((error) => console.warn("Cash payment confirmation email failed:", error.message));
+  return purchase;
+}
+
+export async function cancelCashPurchase(purchaseId, { actorId, notes = "" } = {}) {
+  const purchase = await GuestPurchase.findOne({
+    _id: purchaseId,
+    paymentMethod: "Cash",
+    paidAt: null,
+    status: { $in: ["pending_email_confirmation", "pending_cash_payment"] },
+  }).populate("tier session booking membership client");
+  if (!purchase) throw Object.assign(new Error("Pending cash payment not found."), { status: 404 });
+
+  const cancelledAt = new Date();
+  if (purchase.booking) {
+    if (purchase.booking.status === "accepted") await releaseSeat(purchase.session._id);
+    purchase.booking.status = "cancelled";
+    purchase.booking.paymentStatus = "unpaid";
+    purchase.booking.note = "Cash payment enrollment cancelled by Admin.";
+    await purchase.booking.save();
+  }
+  if (purchase.membership) {
+    purchase.membership.status = "cancelled";
+    purchase.membership.lastEvent = "cash_payment.cancelled";
+    await purchase.membership.save();
+  }
+  purchase.status = "cancelled";
+  purchase.enrollmentStatus = "cancelled";
+  purchase.cancelledAt = cancelledAt;
+  purchase.cancelledBy = actorId || null;
+  purchase.cancellationNotes = String(notes || "").trim();
+  purchase.cashConfirmationTokenHash = undefined;
+  purchase.cashConfirmationExpiresAt = null;
+  await purchase.save();
+
+  await sendPurchaseStatusEmailOnce(
+    purchase._id,
+    "booking_cancelled",
+    `cash-payment-cancelled:${purchase._id}:${cancelledAt.toISOString()}`,
+    { cancelledAt }
+  ).catch((error) => console.warn("Cash cancellation email failed:", error.message));
   return purchase;
 }
 

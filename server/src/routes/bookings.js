@@ -559,6 +559,12 @@ router.post(
       throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
     }
     if (booking.status === "cancelled") throw new HttpError(409, "Attendance cannot be recorded for a cancelled booking.");
+    if (booking.paymentStatus !== "paid") {
+      throw new HttpError(
+        409,
+        "Payment is still pending. Please complete your payment before attending the class."
+      );
+    }
     if (booking.checkInUsedAt && req.user.role !== "admin") {
       throw new HttpError(409, "Attendance was confirmed by QR check-in and can only be changed by an Admin.");
     }

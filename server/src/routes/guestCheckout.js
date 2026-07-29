@@ -5,6 +5,7 @@ import { GuestPurchase } from "../models/GuestPurchase.js";
 import { MembershipTier } from "../models/MembershipTier.js";
 import {
   confirmCashEnrollment,
+  cancelCashPurchase,
   fulfillGuestPurchase,
   markCashPurchasePaid,
 } from "../services/guestPurchase.js";
@@ -19,6 +20,7 @@ import { requireRole } from "../middleware/requireRole.js";
 import { findActiveDuplicate, findActiveScheduleConflict } from "../services/duplicatePurchase.js";
 import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
+import { createAuditLog } from "../services/audit.js";
 
 const router = Router();
 const safeSession = (session) => session?.status === "published" &&
@@ -390,9 +392,103 @@ router.post("/cash-confirm", asyncHandler(async (req, res) => {
   }
 }));
 
+router.get("/cash-payments", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const requestedStatus = String(req.query.status || "all").toLowerCase();
+  const query = { paymentMethod: "Cash" };
+  if (requestedStatus === "pending") {
+    query.paidAt = null;
+    query.status = { $in: ["pending_email_confirmation", "pending_cash_payment"] };
+  } else if (requestedStatus === "paid") {
+    query.paidAt = { $ne: null };
+    query.status = { $in: ["confirmed", "waitlisted", "paid"] };
+  } else if (requestedStatus === "cancelled") {
+    query.status = "cancelled";
+  }
+  const purchases = await GuestPurchase.find(query)
+    .sort("-createdAt")
+    .populate("client", "name email phone")
+    .populate("tier", "name")
+    .populate({ path: "session", populate: { path: "instructor", select: "name" } })
+    .populate("membership", "status currentPeriodEnd")
+    .populate("paidBy", "name email")
+    .populate("cancelledBy", "name email");
+  const payments = purchases.map((purchase) => ({
+    id: purchase._id,
+    referenceId: purchase.referenceId,
+    client: {
+      id: purchase.client?._id || null,
+      name: purchase.client?.name || purchase.fullName,
+      email: purchase.client?.email || purchase.email,
+      phone: purchase.client?.phone || purchase.phone,
+    },
+    planName: purchase.tier?.name || purchase.planSnapshot?.name || "Plan",
+    className: purchase.session?.title || "—",
+    instructorName: purchase.session?.instructor?.name || "—",
+    scheduleStart: purchase.session?.startAt || null,
+    amount: purchase.totalAmount,
+    currency: purchase.currency,
+    bookingDate: purchase.createdAt,
+    paymentMethod: purchase.paymentMethod,
+    paymentStatus: purchase.paidAt ? "paid" : purchase.status === "cancelled" ? "cancelled" : "pending",
+    enrollmentStatus: purchase.membership?.status === "active" ? "active"
+      : purchase.enrollmentStatus || "pending_email_confirmation",
+    paidAt: purchase.paidAt,
+    paidBy: purchase.paidBy,
+    paymentReference: purchase.paymentReference,
+    paymentNotes: purchase.paymentNotes,
+    cancelledAt: purchase.cancelledAt,
+    cancelledBy: purchase.cancelledBy,
+    cancellationNotes: purchase.cancellationNotes,
+  }));
+  res.json({ payments });
+}));
+
 router.post("/orders/:id/mark-cash-paid", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
-  const purchase = await markCashPurchasePaid(req.params.id);
+  const purchase = await markCashPurchasePaid(req.params.id, {
+    actorId: req.user._id,
+    paymentReference: req.body?.paymentReference,
+    notes: req.body?.notes,
+  });
+  await createAuditLog({
+    actor: req.user,
+    action: "CASH_PAYMENT_MARKED_PAID",
+    description: `Marked cash payment ${purchase.referenceId} as Paid.`,
+    entityType: "membership",
+    entityId: purchase.membership?._id || purchase._id,
+    entityLabel: purchase.referenceId,
+    updatedValue: {
+      paymentStatus: "paid",
+      enrollmentStatus: "active",
+      paidAt: purchase.paidAt,
+      paidBy: req.user._id,
+      paymentReference: purchase.paymentReference,
+      notes: purchase.paymentNotes,
+    },
+  });
   res.json({ order: purchase.toPublic(), message: "Cash payment marked as Paid." });
+}));
+
+router.post("/orders/:id/cancel-cash-payment", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const purchase = await cancelCashPurchase(req.params.id, {
+    actorId: req.user._id,
+    notes: req.body?.notes,
+  });
+  await createAuditLog({
+    actor: req.user,
+    action: "CASH_PAYMENT_CANCELLED",
+    description: `Cancelled pending cash payment ${purchase.referenceId}.`,
+    entityType: "membership",
+    entityId: purchase.membership?._id || purchase._id,
+    entityLabel: purchase.referenceId,
+    updatedValue: {
+      paymentStatus: "cancelled",
+      enrollmentStatus: "cancelled",
+      cancelledAt: purchase.cancelledAt,
+      cancelledBy: req.user._id,
+      notes: purchase.cancellationNotes,
+    },
+  });
+  res.json({ order: purchase.toPublic(), message: "Cash payment cancelled." });
 }));
 
 router.post("/orders/:id/simulate-success", asyncHandler(async (req, res) => {

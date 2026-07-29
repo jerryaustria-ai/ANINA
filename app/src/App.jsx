@@ -40,6 +40,7 @@ const MENU = {
     ["/dashboard/class-titles", "Classes", "classes"],
     ["/dashboard/rooms", "Rooms", "rooms"],
     ["/dashboard/tiers", "Class Plans", "plans"],
+    ["/dashboard/payments", "Payments", "payments"],
     ["/dashboard/memberships", "Memberships", "membership"],
     ["/dashboard/audit-trail", "Audit Trail", "audit"],
     ["/dashboard/profile", "Profile", "profile"],
@@ -60,6 +61,7 @@ function MenuIcon({ name }) {
     classes: <><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></>,
     rooms: <><path d="M4 21V3h12v18M16 8h4v13M8 7h4M8 11h4M8 15h4"/></>,
     membership: <><circle cx="8" cy="12" r="5"/><path d="M13 9h8M13 15h8"/></>,
+    payments: <><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></>,
     audit: <><path d="M5 3h14v18H5z"/><path d="M9 7h6M9 11h6M9 15h4"/></>,
   };
   return <svg className="menu-icon" viewBox="0 0 24 24" aria-hidden="true"
@@ -168,6 +170,7 @@ function Dashboard() {
               <Route path="people" element={<AdminDashboard view="people" />} />
               <Route path="class-titles" element={<AdminDashboard view="class-titles" />} />
               <Route path="tiers" element={<AdminDashboard view="tiers" />} />
+              <Route path="payments" element={<AdminDashboard view="payments" />} />
               <Route path="memberships" element={<AdminDashboard view="memberships" />} />
               <Route path="clients/:clientId" element={<ClientRecordDetails />} />
             </>
