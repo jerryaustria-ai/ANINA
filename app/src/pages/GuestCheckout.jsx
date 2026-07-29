@@ -19,13 +19,11 @@ export default function GuestCheckout() {
   const token = params.get("token") || sessionStorage.getItem(`guest_order_${orderId}`) || "";
   const [order, setOrder] = useState(null);
   const [working, setWorking] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("xendit");
   const [error, setError] = useState("");
 
   const load = () => api(`/guest-checkout/orders/${orderId}?token=${encodeURIComponent(token)}`)
     .then(({ order: value }) => {
       setOrder(value);
-      if (value.plan?.directCash) setPaymentMethod("cash");
       setError("");
     })
     .catch((err) => setError(err.message));
@@ -86,6 +84,7 @@ export default function GuestCheckout() {
   const done = ["confirmed", "waitlisted"].includes(order.status);
   const awaitingCashPayment = ["pending_email_confirmation", "pending_cash_payment"].includes(order.status);
   const plan = order.plan;
+  const cashOnly = plan.directCash === true;
 
   return <div className="guest-flow">
     <header className="guest-flow-nav"><Link to="/"><img src="/assets/images/anina-logo.png" alt="ANINA" /></Link>
@@ -109,16 +108,14 @@ export default function GuestCheckout() {
         </div>
         <aside>
           <p>You will be charged a one-time payment of <strong>{money(order.totalAmount, order.currency)}</strong>, and your package will be active for <strong>{validity(plan)}</strong>.</p>
-          {!done && !awaitingCashPayment && <div className="checkout-payment-methods">
-            {paymentMethod !== "cash" && <label><input type="radio" name="payment-method" checked={paymentMethod === "xendit"}
-              onChange={() => setPaymentMethod("xendit")} /> Online Payment (Xendit)</label>}
-            <label><input type="radio" name="payment-method" checked={paymentMethod === "cash"}
-              onChange={() => setPaymentMethod("cash")} /> Cash Payment</label>
+          {!done && !awaitingCashPayment && <div className="checkout-payment-readonly">
+            <span>Payment Method</span>
+            <strong>{cashOnly ? "Cash Payment" : "Online Payment (Xendit)"}</strong>
           </div>}
           {!done && !awaitingCashPayment && <button className="guest-primary"
-            onClick={paymentMethod === "cash" ? requestCashConfirmation : pay} disabled={working}>
-            {working ? "Processing…" : paymentMethod === "cash"
-              ? "Send Confirmation Email"
+            onClick={cashOnly ? requestCashConfirmation : pay} disabled={working}>
+            {working ? "Processing…" : cashOnly
+              ? "Confirm Booking"
               : order.simulated ? "Complete Payment (Simulated)" : "Proceed to Xendit"}
           </button>}
           {awaitingCashPayment && <div className="cash-confirmation-note">
@@ -126,8 +123,8 @@ export default function GuestCheckout() {
             <span>Please pay at ANINA before the class. Check-in remains unavailable until an Admin marks this payment as Paid.</span>
           </div>}
           {done && <Link className="guest-primary link" to="/login">Log in to view your booking</Link>}
-          <small>{paymentMethod === "cash"
-            ? "Cash enrollment requires email confirmation. An Admin marks it Paid after receiving payment."
+          <small>{cashOnly
+            ? "An Admin marks the booking as Paid after receiving your cash payment."
             : "Booking and package credits are created only after successful payment."}</small>
         </aside>
       </section>

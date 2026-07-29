@@ -207,6 +207,12 @@ router.get("/orders/:id", asyncHandler(async (req, res) => {
 
 router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
+  if (purchase.planSnapshot?.directCash === true) {
+    return res.status(409).json({
+      error: "This booking is configured for Cash Payment and cannot use Online Payment.",
+      code: "PAYMENT_METHOD_LOCKED",
+    });
+  }
   if (["confirmed", "waitlisted"].includes(purchase.status)) return res.json({ order: purchase.toPublic() });
   if (!safeSession(purchase.session)) return res.status(409).json({ error: "This class is no longer available for booking." });
   if (purchase.tier?.firstTimerOnly && await hasPriorClientActivity(purchase.email, {
@@ -276,6 +282,12 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
 
 router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
+  if (purchase.planSnapshot?.directCash !== true) {
+    return res.status(409).json({
+      error: "This Plan/Package is configured for Online Payment through Xendit.",
+      code: "PAYMENT_METHOD_LOCKED",
+    });
+  }
   if (purchase.status === "pending_cash_payment") return res.json({ order: purchase.toPublic() });
   const directCash = purchase.planSnapshot?.directCash === true;
   const selectedPlan = directCash ? purchase.planSnapshot : purchase.tier;
@@ -495,6 +507,12 @@ router.post("/orders/:id/cancel-cash-payment", requireAuth, requireRole("admin")
 
 router.post("/orders/:id/simulate-success", asyncHandler(async (req, res) => {
   const purchase = await loadAuthorizedOrder(req);
+  if (purchase.planSnapshot?.directCash === true) {
+    return res.status(409).json({
+      error: "Cash Payment bookings must be marked as Paid by an Admin.",
+      code: "PAYMENT_METHOD_LOCKED",
+    });
+  }
   if (xendit.isLive() || process.env.XENDIT_SIMULATION !== "true") {
     return res.status(404).json({ error: "Not found" });
   }
