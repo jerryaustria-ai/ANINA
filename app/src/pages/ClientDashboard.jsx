@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import CalendarView from "../components/CalendarView.jsx";
@@ -35,6 +35,7 @@ const purchaseValidity = (plan) => {
 
 export default function ClientDashboard() {
   const cal = useCalendar();
+  const handledScheduleLink = useRef(null);
   const [sessions, setSessions] = useState([]);
   const [mine, setMine] = useState([]); // my bookings
   const [membership, setMembership] = useState(null);
@@ -61,13 +62,22 @@ export default function ClientDashboard() {
   useScheduleRefresh(load);
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("schedule");
+    if (!id || handledScheduleLink.current === id) return;
+    handledScheduleLink.current = id;
+
+    // A schedule query parameter is a one-time deep link. Consume it after
+    // opening so closing the modal does not immediately reopen it.
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.delete("schedule");
+    window.history.replaceState(window.history.state, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+
     const session = id && sessions.find((item) => item.id === id);
     if (session) setSelected(session);
-    else if (id && selected?.id !== id) {
+    else {
       api(`/sessions/${id}`).then(({ session: requested }) => setSelected(requested))
         .catch((error) => toast.error(error.message));
     }
-  }, [sessions, selected?.id]);
+  }, [sessions]);
   useEffect(() => {
     const openRelated = (event) => {
       const id = event.detail?.relatedScheduleId;
