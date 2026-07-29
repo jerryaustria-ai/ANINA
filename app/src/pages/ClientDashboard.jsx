@@ -180,7 +180,7 @@ export default function ClientDashboard() {
       </div>
       {!canBook && (
         <div className="status-notice warning">
-          You do not have an active eligible class plan. You may still book using Cash Payment.{" "}
+          You do not have an active eligible class plan.{" "}
           <Link to="/schedule">View available classes →</Link>
         </div>
       )}
