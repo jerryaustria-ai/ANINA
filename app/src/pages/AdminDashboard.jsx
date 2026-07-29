@@ -1497,13 +1497,14 @@ function TiersView() {
       ...t,
       benefits: (t.benefits || []).join("\n"),
       eligibleClassCodes: t.eligibleClassCodes || [],
+      sessionCount: t.unlimitedClasses ? null : Math.max(1, Number(t.sessionCount) || 1),
     } : { ...blankTier, eligibleClassCodes: [] });
   }
   async function save() {
     setBusy(true);
     try {
       const body = { ...edit, amount: Number(edit.amount), intervalCount: Number(edit.intervalCount),
-        sessionCount: edit.unlimitedClasses ? null : Number(edit.sessionCount),
+        sessionCount: edit.unlimitedClasses ? null : Math.max(1, Number(edit.sessionCount) || 1),
         firstTimerOnly: edit.firstTimerOnly === true,
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
         eligibleClassCodes: edit.eligibleClassCodes };
