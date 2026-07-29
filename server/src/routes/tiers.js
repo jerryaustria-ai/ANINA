@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import { MembershipTier } from "../models/MembershipTier.js";
 import { ClassDefinition } from "../models/ClassDefinition.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -13,24 +14,29 @@ router.get(
   "/",
   asyncHandler(async (req, res) => {
     const filter = req.query.all === "1" && req.user.role === "admin" ? {} : { active: true };
-    const tiers = await MembershipTier.find(filter).sort("sortOrder name");
+    const tiers = await MembershipTier.find(filter)
+      .populate("eligibleClassIds", "title active")
+      .sort("sortOrder name");
     res.json({ tiers: tiers.map((t) => t.toPublic()) });
   })
 );
 
 const EDITABLE = ["name", "description", "amount", "currency", "interval", "intervalCount", "benefits",
-  "classTags", "eligibleClassCodes", "sessionCount", "unlimitedClasses", "firstTimerOnly", "active", "sortOrder"];
-const normalizeCodes = (values) => [...new Set((Array.isArray(values) ? values : [])
-  .map((value) => String(value || "").trim().toUpperCase()).filter(Boolean))];
+  "classTags", "eligibleClassIds", "sessionCount", "unlimitedClasses", "firstTimerOnly", "active", "sortOrder"];
+const normalizeIds = (values) => [...new Set((Array.isArray(values) ? values : [])
+  .map((value) => String(value || "").trim()).filter(Boolean))];
 
-async function validateEligibleCodes(values) {
-  const codes = normalizeCodes(values);
-  if (!codes.length) throw new HttpError(400, "Select at least one Eligible Class Code.");
-  const count = await ClassDefinition.countDocuments({ code: { $in: codes }, active: true });
-  if (count !== codes.length) {
-    throw new HttpError(400, "One or more Eligible Class Codes do not match an active class.");
+async function validateEligibleClassIds(values) {
+  const ids = normalizeIds(values);
+  if (!ids.length) throw new HttpError(400, "Select at least one Eligible Class.");
+  if (ids.some((id) => !mongoose.isValidObjectId(id))) {
+    throw new HttpError(400, "One or more Eligible Classes are invalid.");
   }
-  return codes;
+  const count = await ClassDefinition.countDocuments({ _id: { $in: ids }, active: true });
+  if (count !== ids.length) {
+    throw new HttpError(400, "One or more Eligible Classes do not match an active class.");
+  }
+  return ids;
 }
 
 router.post(
@@ -43,13 +49,13 @@ router.post(
         (!Number.isInteger(Number(req.body.sessionCount)) || Number(req.body.sessionCount) < 1)) {
       throw new HttpError(400, "Booking Credits must be at least 1.");
     }
-    const eligibleClassCodes = await validateEligibleCodes(req.body.eligibleClassCodes);
+    const eligibleClassIds = await validateEligibleClassIds(req.body.eligibleClassIds);
     const tier = await MembershipTier.create({
       ...req.body,
-      eligibleClassCodes,
-      classTags: eligibleClassCodes,
+      eligibleClassIds,
       firstTimerOnly: req.body.firstTimerOnly === true,
     });
+    await tier.populate("eligibleClassIds", "title active");
     res.status(201).json({ tier: tier.toPublic() });
   })
 );
@@ -65,19 +71,19 @@ router.patch(
     if (!unlimited && (!Number.isInteger(Number(credits)) || Number(credits) < 1)) {
       throw new HttpError(400, "Booking Credits must be at least 1.");
     }
-    const eligibleClassCodes = req.body.eligibleClassCodes !== undefined
-      ? await validateEligibleCodes(req.body.eligibleClassCodes)
+    const eligibleClassIds = req.body.eligibleClassIds !== undefined
+      ? await validateEligibleClassIds(req.body.eligibleClassIds)
       : null;
     EDITABLE.forEach((k) => {
       if (req.body[k] !== undefined) {
         tier[k] = k === "firstTimerOnly" ? req.body[k] === true : req.body[k];
       }
     });
-    if (eligibleClassCodes) {
-      tier.eligibleClassCodes = eligibleClassCodes;
-      tier.classTags = eligibleClassCodes;
+    if (eligibleClassIds) {
+      tier.eligibleClassIds = eligibleClassIds;
     }
     await tier.save();
+    await tier.populate("eligibleClassIds", "title active");
     res.json({ tier: tier.toPublic() });
   })
 );

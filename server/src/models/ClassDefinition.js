@@ -3,10 +3,6 @@ import mongoose from "mongoose";
 const classDefinitionSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true, unique: true, index: true },
-    code: {
-      type: String, required: true, trim: true, uppercase: true,
-      unique: true, sparse: true, index: true,
-    },
     description: { type: String, default: "" },
     type: { type: String, enum: ["group", "private"], default: "group" },
     defaultRoom: { type: mongoose.Schema.Types.ObjectId, ref: "Room", default: null },
@@ -22,7 +18,6 @@ classDefinitionSchema.methods.toPublic = function () {
   return {
     id: this._id,
     title: this.title,
-    code: this.code,
     description: this.description,
     type: this.type,
     defaultRoom: room,

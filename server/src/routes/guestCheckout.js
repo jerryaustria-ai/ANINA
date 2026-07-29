@@ -13,14 +13,12 @@ import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
 
 const router = Router();
-const normalizeCode = (value) => String(value || "").trim().toUpperCase();
 const safeSession = (session) => session?.status === "published" &&
   session?.isPublished === true && session?.approvedAt && new Date(session.endAt) > new Date();
 
 function matchesClass(tier, session) {
-  const classCode = normalizeCode(session.classCode || session.classDefinition?.code);
-  const eligible = (tier.eligibleClassCodes || []).map(normalizeCode);
-  return !!classCode && eligible.includes(classCode);
+  const classId = String(session.classDefinition?._id || session.classDefinition || "");
+  return !!classId && (tier.eligibleClassIds || []).some((id) => String(id?._id || id) === classId);
 }
 
 function planSnapshot(tier) {
@@ -36,7 +34,7 @@ function planSnapshot(tier) {
     interval: tier.interval,
     intervalCount: tier.intervalCount,
     classTags: tier.classTags,
-    eligibleClassCodes: tier.eligibleClassCodes,
+    eligibleClassIds: tier.eligibleClassIds,
   };
 }
 

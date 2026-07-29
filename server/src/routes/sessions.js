@@ -28,7 +28,7 @@ const router = Router();
 const populate = (q) =>
   q.populate("instructor", "name email picture role active")
     .populate("room", "name color maxCapacity location active")
-    .populate("classDefinition", "title code description type defaultCapacity defaultMinToRun active");
+    .populate("classDefinition", "title description type defaultCapacity defaultMinToRun active");
 
 const ACTIVE_CLIENT_STATUSES = ["pending", "accepted", "approved", "confirmed", "booked", "waitlisted", "active"];
 
@@ -287,7 +287,7 @@ router.post(
     const instructorSubmission = req.user.role === "instructor";
     const now = new Date();
     const session = await ClassSession.create({
-      title, classDefinition: classDefinition || null, classCode: official?.code || "", type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
       startAt, endAt, capacity: cap, minToRun: min,
       notes, color,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -585,7 +585,7 @@ router.post(
     const now = new Date();
     const recurrenceGroupId = randomUUID();
     const created = await ClassSession.insertMany(occurrences.map((occurrence) => ({
-      title, classDefinition: classDefinition || null, classCode: official?.code || "", type, instructor: instructorId, room,
+      title, classDefinition: classDefinition || null, type, instructor: instructorId, room,
       startAt: occurrence.start, endAt: occurrence.end,
       capacity: cap, minToRun: min, notes, color, recurrenceGroupId,
       status: instructorSubmission ? "pending_approval" : "published",
@@ -744,7 +744,6 @@ router.patch(
     });
     if (b.room !== undefined) session.room = b.room;
     if (b.classDefinition !== undefined) session.classDefinition = b.classDefinition || null;
-    if (selectedOfficial) session.classCode = selectedOfficial.code;
     if (req.user.role === "admin" && b.instructor !== undefined) session.instructor = instructorId;
     if (req.user.role === "instructor") {
       session.status = "pending_approval";

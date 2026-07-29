@@ -74,14 +74,13 @@ export async function hasActiveMembership(clientId) {
 }
 
 export function membershipAllowsClass(membership, classReference) {
-  const codes = (membership.validClassCodes || [])
-    .map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
-  const classCode = String(
+  const ids = (membership.validClassIds || []).map(String);
+  const classId = String(
     typeof classReference === "string"
       ? classReference
-      : classReference?.classCode || classReference?.classDefinition?.code || ""
-  ).trim().toUpperCase();
-  return !!classCode && codes.includes(classCode);
+      : classReference?.classDefinition?._id || classReference?.classDefinition || ""
+  );
+  return !!classId && ids.includes(classId);
 }
 
 export async function findEligibleMembership(clientId, classReference) {

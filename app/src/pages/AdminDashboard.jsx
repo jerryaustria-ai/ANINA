@@ -959,7 +959,7 @@ function ScheduleApprovalView() {
 
 /* ---------- Official class titles ---------- */
 const blankClassTitle = {
-  title: "", code: "", description: "", type: "group", defaultRoom: "",
+  title: "", description: "", type: "group", defaultRoom: "",
   defaultCapacity: 8, defaultMinToRun: 1, active: true,
 };
 function ClassTitlesView() {
@@ -985,18 +985,8 @@ function ClassTitlesView() {
         defaultCapacity: Number(edit.defaultCapacity),
         defaultMinToRun: Number(edit.defaultMinToRun),
       };
-      if (edit.id) {
-        try {
-          await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
-        } catch (error) {
-          if (error.status !== 409 ||
-              !error.message.includes("Confirm the change") ||
-              !window.confirm(`${error.message}\n\nDo you want to update the linked records?`)) throw error;
-          await api(`/class-definitions/${edit.id}`, {
-            method: "PATCH", body: { ...body, confirmCodeChange: true },
-          });
-        }
-      } else await api("/class-definitions", { method: "POST", body });
+      if (edit.id) await api(`/class-definitions/${edit.id}`, { method: "PATCH", body });
+      else await api("/class-definitions", { method: "POST", body });
       toast.success(edit.id ? "Official class title updated." : "Official class title created.");
       setEdit(null);
       await load();
@@ -1035,8 +1025,7 @@ function ClassTitlesView() {
     <div className="grid-cards">{items.map((item) => <article className="card" key={item.id}
       style={{ opacity: item.active ? 1 : .55 }}>
       <h3>{item.title}</h3><p className="sub">{item.description || "No description"}</p>
-      <p className="meta-line"><strong>Code: {item.code}</strong><br />
-        {item.type === "private" ? "Private 1:1" : "Group Class"}<br />
+      <p className="meta-line">{item.type === "private" ? "Private 1:1" : "Group Class"}<br />
         Default room: {item.defaultRoom?.name || "Not assigned"}<br />
         Capacity: {item.defaultCapacity} · Minimum: {item.defaultMinToRun}</p>
       <button className="btn ghost sm" onClick={() => setEdit({
@@ -1046,16 +1035,10 @@ function ClassTitlesView() {
     <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit Class Title" : "Create Class Title"}
       footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
         <button className="btn" onClick={save}
-          disabled={busy || !edit?.title.trim() || !edit?.code?.trim() ||
-            !maximumIsValid || !minimumIsValid}>Save</button></>}>
+          disabled={busy || !edit?.title.trim() || !maximumIsValid || !minimumIsValid}>Save</button></>}>
       {edit && <div>
         <div className="field"><label>Class title</label><input value={edit.title}
           onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></div>
-        <div className="field"><label>Class Code <span aria-hidden="true">*</span></label>
-          <input value={edit.code || ""} onChange={(event) =>
-            setEdit({ ...edit, code: event.target.value.toUpperCase() })}
-          placeholder="e.g. PILATES-FOUNDATION" autoCapitalize="characters" />
-          <small>Unique code used by plans, bookings, credits, and rescheduling.</small></div>
         <div className="field"><label>Description</label><textarea rows="3" value={edit.description}
           onChange={(event) => setEdit({ ...edit, description: event.target.value })} /></div>
         <div className="field row"><div><label>Class type</label><select value={edit.type}
@@ -1488,7 +1471,7 @@ function PeopleView() {
 
 /* ---------- Membership tiers (admin-managed) ---------- */
 const blankTier = { name: "", description: "", amount: 15000, currency: "PHP", interval: "MONTH", intervalCount: 1,
-  benefits: "", eligibleClassCodes: [], sessionCount: 1, unlimitedClasses: false,
+  benefits: "", eligibleClassIds: [], sessionCount: 1, unlimitedClasses: false,
   firstTimerOnly: false, active: true, sortOrder: 0 };
 function TiersView() {
   const [tiers, setTiers] = useState([]);
@@ -1508,9 +1491,9 @@ function TiersView() {
     setEdit(t ? {
       ...t,
       benefits: (t.benefits || []).join("\n"),
-      eligibleClassCodes: t.eligibleClassCodes || [],
+      eligibleClassIds: t.eligibleClassIds || [],
       sessionCount: t.unlimitedClasses ? null : Math.max(1, Number(t.sessionCount) || 1),
-    } : { ...blankTier, eligibleClassCodes: [] });
+    } : { ...blankTier, eligibleClassIds: [] });
   }
   async function save() {
     setBusy(true);
@@ -1519,7 +1502,7 @@ function TiersView() {
         sessionCount: edit.unlimitedClasses ? null : Math.max(1, Number(edit.sessionCount) || 1),
         firstTimerOnly: edit.firstTimerOnly === true,
         benefits: String(edit.benefits || "").split("\n").map((s) => s.trim()).filter(Boolean),
-        eligibleClassCodes: edit.eligibleClassCodes };
+        eligibleClassIds: edit.eligibleClassIds };
       if (edit.id) await api(`/tiers/${edit.id}`, { method: "PATCH", body });
       else await api("/tiers", { method: "POST", body });
       const wasEdit = !!edit.id;
@@ -1542,7 +1525,7 @@ function TiersView() {
               <h3>{t.name} {!t.active && <span className="status-tag cancelled">inactive</span>}</h3>
               <p className="tier-amount">{fmtMoney(t.amount, t.currency)}<span className="tier-per"> Plan Amount</span></p>
               {t.description && <div className="sub">{t.description}</div>}
-              <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · Eligible: {(t.eligibleClassCodes || []).join(", ") || "None"}</div>
+              <div className="sub">Valid for {t.intervalCount} {String(t.interval).toLowerCase()}{t.intervalCount === 1 ? "" : "s"} · Eligible: {(t.eligibleClasses || []).map((item) => item.title).join(", ") || "None"}</div>
               {t.firstTimerOnly && <div className="status-tag pending" style={{ marginTop: ".55rem" }}>First Timer Only</div>}
               {t.benefits?.length > 0 && <ul className="tier-benefits">{t.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
               <button className="btn ghost sm" style={{ marginTop: "0.7rem" }} onClick={() => openEdit(t)}>Edit</button>
@@ -1554,7 +1537,7 @@ function TiersView() {
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? "Edit class plan" : "Add class plan"}
         footer={<><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
           <button className="btn" onClick={save}
-            disabled={busy || !edit?.name || !edit?.eligibleClassCodes?.length}>Save</button></>}>
+            disabled={busy || !edit?.name || !edit?.eligibleClassIds?.length}>Save</button></>}>
         {edit && (
           <div>
             <div className="field"><label>Name</label><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="e.g. Sanctuary" /></div>
@@ -1580,15 +1563,15 @@ function TiersView() {
             <div className="field"><label>Eligible Classes <span aria-hidden="true">*</span></label>
               <div className="client-picker-list">
                 {classes.map((item) => {
-                  const selected = edit.eligibleClassCodes.includes(item.code);
+                  const selected = edit.eligibleClassIds.includes(item.id);
                   return <label className="client-picker-option" key={item.id}>
                     <input type="checkbox" checked={selected} onChange={(event) => {
-                      const eligibleClassCodes = event.target.checked
-                        ? [...new Set([...edit.eligibleClassCodes, item.code])]
-                        : edit.eligibleClassCodes.filter((code) => code !== item.code);
-                      setEdit({ ...edit, eligibleClassCodes });
+                      const eligibleClassIds = event.target.checked
+                        ? [...new Set([...edit.eligibleClassIds, item.id])]
+                        : edit.eligibleClassIds.filter((id) => id !== item.id);
+                      setEdit({ ...edit, eligibleClassIds });
                     }} />
-                    <span><strong>{item.code}</strong><small>{item.title}</small></span>
+                    <span><strong>{item.title}</strong></span>
                   </label>;
                 })}
               </div>

@@ -102,9 +102,9 @@ async function announceBooking(booking, session, actorId, action) {
   }, actorId);
 }
 
-const sameClassCode = (left, right) =>
+const sameClassId = (left, right) =>
   !!String(left || "").trim() &&
-  String(left || "").trim().toUpperCase() === String(right || "").trim().toUpperCase();
+  String(left || "") === String(right || "");
 
 async function loadRescheduleContext(req) {
   const booking = await Booking.findById(req.params.id)
@@ -131,7 +131,10 @@ async function loadRescheduleContext(req) {
 }
 
 function validateReplacementSchedule({ booking, membership, target, now = new Date() }) {
-  if (!sameClassCode(target.classCode, booking.session.classCode)) {
+  if (!sameClassId(
+    target.classDefinition?._id || target.classDefinition,
+    booking.session.classDefinition?._id || booking.session.classDefinition
+  )) {
     throw new HttpError(409, "The replacement schedule must be for the same class.");
   }
   if (target.status !== "published" || target.isPublished !== true) {
@@ -413,7 +416,7 @@ router.get(
       : now;
     const query = {
       _id: { $ne: booking.session._id },
-      classCode: booking.session.classCode,
+      classDefinition: booking.session.classDefinition?._id || booking.session.classDefinition,
       status: "published",
       isPublished: true,
       startAt: {
