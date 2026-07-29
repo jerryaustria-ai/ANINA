@@ -108,8 +108,8 @@ export default function GuestCheckout() {
         <aside>
           <p>You will be charged a one-time payment of <strong>{money(order.totalAmount, order.currency)}</strong>, and your package will be active for <strong>{validity(plan)}</strong>.</p>
           {!done && !awaitingCashEmail && <div className="checkout-payment-methods">
-            <label><input type="radio" name="payment-method" checked={paymentMethod === "xendit"}
-              onChange={() => setPaymentMethod("xendit")} /> Online Payment (Xendit)</label>
+            {paymentMethod !== "cash" && <label><input type="radio" name="payment-method" checked={paymentMethod === "xendit"}
+              onChange={() => setPaymentMethod("xendit")} /> Online Payment (Xendit)</label>}
             <label><input type="radio" name="payment-method" checked={paymentMethod === "cash"}
               onChange={() => setPaymentMethod("cash")} /> Cash Payment</label>
           </div>}
