@@ -89,12 +89,14 @@ export default function ClientMembership() {
     </div>}
 
     <h2 style={{ margin: "0 0 .8rem", fontWeight: 300 }}>Purchase History</h2>
-    {!purchases.length ? <div className="empty">No successful class plan purchases yet.</div> :
+    {!purchases.length ? <div className="empty">No class plan purchases or cash enrollments yet.</div> :
       <div className="grid-cards">{purchases.map((purchase) => <article className="card purchase-history-card" key={purchase.id}>
         <div className="purchase-history-head"><div><h3>{purchase.plan?.name || "Class Plan"}</h3>
           <span>{purchase.referenceId}</span></div>
-          <span className={"status-tag " + (purchase.status === "refunded" ? "declined" : "accepted")}>
-            {purchase.status === "refunded" ? "Refunded" : "Paid"}</span></div>
+          <span className={"status-tag " + (purchase.status === "refunded" ? "declined"
+            : purchase.status === "pending_cash_payment" ? "pending" : "accepted")}>
+            {purchase.status === "refunded" ? "Refunded"
+              : purchase.status === "pending_cash_payment" ? "Pending Cash Payment" : "Paid"}</span></div>
         <dl>
           <div><dt>Class</dt><dd>{purchase.session?.title || "—"}</dd></div>
           <div><dt>Schedule</dt><dd>{purchase.session ? fmtRange(purchase.session.startAt, purchase.session.endAt) : "—"}</dd></div>

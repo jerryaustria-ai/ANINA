@@ -24,6 +24,7 @@ import {
   cleanupExpiredReadNotifications,
   startNotificationCleanup,
 } from "./services/notificationCleanup.js";
+import { cleanupBlankCashConfirmationTokens } from "./services/cashEnrollmentMaintenance.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -62,12 +63,30 @@ app.use((err, req, res, next) => {
   const status = err.status || 500;
   if (status >= 500) console.error(err);
   // Duplicate-key (e.g. double booking) surfaces as 409.
-  if (err.code === 11000) return res.status(409).json({ error: "Duplicate entry" });
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyPattern || err.keyValue || {})[0];
+    if (field === "cashConfirmationTokenHash") {
+      return res.status(409).json({
+        error: "The cash confirmation token could not be prepared. Please retry the checkout.",
+        code: "CASH_CONFIRMATION_TOKEN_CONFLICT",
+      });
+    }
+    return res.status(409).json({
+      error: "A duplicate record already exists.",
+      code: "DUPLICATE_RECORD",
+    });
+  }
   res.status(status).json({ error: err.message || "Server error" });
 });
 
 connectDB(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/anina")
   .then(async () => {
+    try {
+      const cleaned = await cleanupBlankCashConfirmationTokens();
+      if (cleaned) console.log(`✓ Removed ${cleaned} legacy blank cash confirmation token(s)`);
+    } catch (error) {
+      console.error("Cash confirmation token cleanup failed:", error.message);
+    }
     try {
       await cleanupExpiredReadNotifications();
     } catch (error) {

@@ -240,15 +240,17 @@ export default function ClientDashboard() {
       )}
 
       <h2 style={{ margin: "1.6rem 0 0.8rem", fontWeight: 300 }}>Purchase history</h2>
-      {purchases.length === 0 ? <div className="empty">No successful package purchases yet.</div> : (
+      {purchases.length === 0 ? <div className="empty">No package purchases or cash enrollments yet.</div> : (
         <div className="grid-cards">
           {purchases.map((purchase) => (
             <article className="card purchase-history-card" key={purchase.id}>
               <div className="purchase-history-head">
                 <div><h3>{purchase.session?.title || "Class booking"}</h3>
                   <span>{purchase.referenceId}</span></div>
-                <span className={"status-tag " + (purchase.status === "refunded" ? "declined" : "accepted")}>
-                  {purchase.status === "refunded" ? "Refunded" : "Paid"}
+                <span className={"status-tag " + (purchase.status === "refunded" ? "declined"
+                  : purchase.status === "pending_cash_payment" ? "pending" : "accepted")}>
+                  {purchase.status === "refunded" ? "Refunded"
+                    : purchase.status === "pending_cash_payment" ? "Pending Cash Payment" : "Paid"}
                 </span>
               </div>
               <dl>

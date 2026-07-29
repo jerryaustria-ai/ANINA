@@ -34,7 +34,7 @@ const guestPurchaseSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    cashConfirmationTokenHash: { type: String, default: "", unique: true, sparse: true, index: true },
+    cashConfirmationTokenHash: { type: String, unique: true, sparse: true, index: true },
     cashConfirmationExpiresAt: { type: Date, default: null, index: true },
     cashConfirmationUsedAt: { type: Date, default: null },
     cashConfirmedAt: { type: Date, default: null },
@@ -65,6 +65,12 @@ const guestPurchaseSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+guestPurchaseSchema.pre("validate", function normalizeCashConfirmationToken() {
+  if (!String(this.cashConfirmationTokenHash || "").trim()) {
+    this.cashConfirmationTokenHash = undefined;
+  }
+});
 
 guestPurchaseSchema.methods.toPublic = function () {
   const session = this.session?.toPublic ? this.session.toPublic() : this.session;
