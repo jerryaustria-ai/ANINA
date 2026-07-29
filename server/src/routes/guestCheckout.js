@@ -269,11 +269,52 @@ router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
   const host = req.get("x-forwarded-host") || req.get("host");
   const appUrl = (/^https:\/\//i.test(configured) ? configured : `${protocol}://${host}`).replace(/\/$/, "");
   const confirmationUrl = `${appUrl}/guest/cash-confirm?token=${encodeURIComponent(rawToken)}`;
-  const email = await sendCashEnrollmentConfirmationEmail(purchase, confirmationUrl);
-  purchase.emailStatus = email.status;
-  purchase.emailMessageId = email.id;
-  await purchase.save();
-  res.json({ order: purchase.toPublic(), emailStatus: email.status });
+  try {
+    const email = await sendCashEnrollmentConfirmationEmail(purchase, confirmationUrl);
+    if (email.status !== "sent") {
+      purchase.status = "pending_payment";
+      purchase.enrollmentStatus = null;
+      purchase.cashConfirmationTokenHash = undefined;
+      purchase.cashConfirmationExpiresAt = null;
+      purchase.emailStatus = "skipped";
+      await purchase.save();
+      return res.status(503).json({
+        error: "Confirmation email is not configured on the server. Please contact ANINA.",
+        code: "CASH_EMAIL_NOT_CONFIGURED",
+      });
+    }
+    purchase.emailStatus = "sent";
+    purchase.emailMessageId = email.id;
+    purchase.emailEvents.push({
+      eventKey: `cash-confirmation:${purchase.cashConfirmationTokenHash}`,
+      notificationType: "cash_enrollment_confirmation",
+      status: "sent",
+      messageId: email.id,
+      sentAt: new Date(),
+      error: "",
+    });
+    await purchase.save();
+    res.json({ order: purchase.toPublic(), emailStatus: "sent" });
+  } catch (error) {
+    purchase.status = "pending_payment";
+    purchase.enrollmentStatus = null;
+    purchase.cashConfirmationTokenHash = undefined;
+    purchase.cashConfirmationExpiresAt = null;
+    purchase.emailStatus = "failed";
+    purchase.emailEvents.push({
+      eventKey: `cash-confirmation-failed:${Date.now()}`,
+      notificationType: "cash_enrollment_confirmation",
+      status: "failed",
+      messageId: "",
+      sentAt: new Date(),
+      error: error.message,
+    });
+    await purchase.save();
+    return res.status(502).json({
+      error: `Confirmation email could not be sent: ${error.message}`,
+      code: "CASH_EMAIL_FAILED",
+    });
+  }
 }));
 
 router.post("/cash-confirm", asyncHandler(async (req, res) => {

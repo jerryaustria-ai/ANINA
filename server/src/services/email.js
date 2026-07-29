@@ -175,6 +175,10 @@ async function sendEmail(purchase, type, eventKey, details) {
       }],
     } : {}),
   });
+  if (!result.accepted?.length || result.rejected?.length) {
+    throw new Error(`SMTP did not accept the confirmation email${result.rejected?.length
+      ? ` for ${result.rejected.join(", ")}` : ""}.`);
+  }
   return { status: "sent", id: result.messageId || "" };
 }
 
