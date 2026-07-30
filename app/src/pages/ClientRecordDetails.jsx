@@ -119,14 +119,16 @@ export default function ClientRecordDetails() {
           <thead><tr><th>Class</th><th>Instructor / Schedule</th><th>Plan / Reference</th><th>Type</th>
             <th>Attendance</th><th>Payment</th><th>Amount</th><th>Booked</th><th>Expires</th><th>Status</th></tr></thead>
           <tbody>{history.map((record) => <tr key={record.id}>
-            <td>{record.className}</td>
-            <td>{record.session?.instructor?.name || "—"}<small>{date(record.session?.startAt, true)}</small></td>
-            <td>{record.purchasedPlan}<small>{record.referenceId}</small></td>
-            <td>{record.membershipTypeLabel}</td>
-            <td>{record.attendanceStatus}</td><td>{record.paymentStatus}</td>
-            <td>{fmtMoney(record.amountPaid, record.currency)}</td>
-            <td>{date(record.bookingDate)}</td><td>{date(record.expirationDate)}</td>
-            <td><span className="status-tag accepted">{record.planStatus}</span></td>
+            <td data-label="Class">{record.className}</td>
+            <td data-label="Instructor / Schedule">{record.session?.instructor?.name || "—"}<small>{date(record.session?.startAt, true)}</small></td>
+            <td data-label="Plan / Reference">{record.purchasedPlan}<small>{record.referenceId}</small></td>
+            <td data-label="Type">{record.membershipTypeLabel}</td>
+            <td data-label="Attendance">{record.attendanceStatus}</td>
+            <td data-label="Payment">{record.paymentStatus}</td>
+            <td data-label="Amount">{fmtMoney(record.amountPaid, record.currency)}</td>
+            <td data-label="Booked">{date(record.bookingDate)}</td>
+            <td data-label="Expires">{date(record.expirationDate)}</td>
+            <td data-label="Status"><span className="status-tag accepted">{record.planStatus}</span></td>
           </tr>)}</tbody>
         </table></div>}
     </section>

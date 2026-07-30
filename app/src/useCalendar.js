@@ -9,8 +9,9 @@ const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
 
 // Central calendar state shared by every dashboard: view (week|month),
 // the anchor date, the data-fetch range, and navigation handlers.
-export function useCalendar(initialView = "week") {
-  const [view, setView] = useState(initialView);
+export function useCalendar(initialView) {
+  const [view, setView] = useState(() => initialView ||
+    (window.matchMedia("(max-width: 1023px)").matches ? "list" : "week"));
   const [anchor, setAnchor] = useState(() => new Date());
 
   const weekStart = useMemo(() => mondayOf(anchor), [anchor]);

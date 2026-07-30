@@ -81,6 +81,7 @@ function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSideba
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef(null);
   const tabs = MENU[user.role] || [];
+  const compactNav = window.matchMedia("(max-width: 1023px)").matches;
   const current = [...tabs].sort((a, b) => b[0].length - a[0].length)
     .find(([to]) => to === "/dashboard" ? location.pathname === to : location.pathname.startsWith(to));
   const pageTitle = current?.[1] || "Dashboard";
@@ -101,6 +102,7 @@ function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSideba
     <>
       {sidebarOpen && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />}
       <aside className={"app-sidebar" + (sidebarOpen ? " open" : "")}>
+        <button className="sidebar-close" aria-label="Close navigation" onClick={() => setSidebarOpen(false)}>×</button>
         <NavLink to="/" className="sidebar-brand">
           <img src="/assets/images/anina-logo.png" alt="Anina Wellness Sanctuary" />
         </NavLink>
@@ -122,10 +124,12 @@ function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSideba
       <header className="app-topbar">
         <div className="topbar-title">
           <button className="sidebar-toggle"
-            aria-label={sidebarCollapsed ? "Show navigation" : "Hide navigation"}
-            aria-expanded={sidebarOpen || !sidebarCollapsed}
+            aria-label={compactNav
+              ? (sidebarOpen ? "Close navigation" : "Open navigation")
+              : (sidebarCollapsed ? "Show navigation" : "Hide navigation")}
+            aria-expanded={compactNav ? sidebarOpen : !sidebarCollapsed}
             onClick={() => {
-              if (window.matchMedia("(max-width: 900px)").matches) {
+              if (window.matchMedia("(max-width: 1023px)").matches) {
                 setSidebarOpen((value) => !value);
               } else {
                 setSidebarCollapsed((value) => {

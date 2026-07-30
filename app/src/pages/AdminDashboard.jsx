@@ -103,11 +103,12 @@ function OverviewView() {
         <thead><tr><th>Client</th><th>Service</th><th>Instructor</th><th>Schedule</th>
           <th>Booking</th><th>Attendance</th><th>Payment</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={row.reference}>
-          <td><strong>{row.client}</strong><small>{row.email}</small></td>
-          <td>{row.service}</td><td>{row.instructor}</td>
-          <td>{fmtRange(row.start, row.end)}</td>
-          <td>{STATUS_LABEL[row.bookingStatus] || row.bookingStatus}</td>
-          <td>{STATUS_LABEL[row.attendance] || row.attendance}</td><td>{row.payment}</td>
+          <td data-label="Client"><strong>{row.client}</strong><small>{row.email}</small></td>
+          <td data-label="Service">{row.service}</td><td data-label="Instructor">{row.instructor}</td>
+          <td data-label="Schedule">{fmtRange(row.start, row.end)}</td>
+          <td data-label="Booking">{STATUS_LABEL[row.bookingStatus] || row.bookingStatus}</td>
+          <td data-label="Attendance">{STATUS_LABEL[row.attendance] || row.attendance}</td>
+          <td data-label="Payment">{row.payment}</td>
         </tr>)}</tbody>
       </table></div>}
     </section>
@@ -1671,17 +1672,17 @@ function PaymentsView() {
           <thead><tr><th>Client</th><th>Plan / Package</th><th>Amount</th><th>Booking Date</th>
             <th>Method</th><th>Payment Status</th><th>Enrollment Status</th><th>Actions</th></tr></thead>
           <tbody>{list.map((record) => <tr key={record.id}>
-            <td><strong>{record.client.name}</strong><small>{record.client.email}</small></td>
-            <td>{record.planName}<small>{record.className}</small></td>
-            <td>{fmtMoney(record.amount, record.currency)}</td>
-            <td>{dateTime(record.bookingDate)}</td>
-            <td>{record.paymentMethod}</td>
-            <td><span className={`status-tag ${record.paymentStatus === "paid" ? "accepted"
+            <td data-label="Client"><strong>{record.client.name}</strong><small>{record.client.email}</small></td>
+            <td data-label="Plan / Package">{record.planName}<small>{record.className}</small></td>
+            <td data-label="Amount">{fmtMoney(record.amount, record.currency)}</td>
+            <td data-label="Booking Date">{dateTime(record.bookingDate)}</td>
+            <td data-label="Method">{record.paymentMethod}</td>
+            <td data-label="Payment Status"><span className={`status-tag ${record.paymentStatus === "paid" ? "accepted"
               : record.paymentStatus === "cancelled" ? "cancelled" : "pending"}`}>
               {statusLabel(record.paymentStatus)}</span></td>
-            <td><span className={`status-tag ${record.enrollmentStatus === "active" ? "accepted" : "pending"}`}>
+            <td data-label="Enrollment Status"><span className={`status-tag ${record.enrollmentStatus === "active" ? "accepted" : "pending"}`}>
               {statusLabel(record.enrollmentStatus)}</span></td>
-            <td><div className="table-actions">
+            <td data-label="Actions"><div className="table-actions">
               <button className="btn ghost sm" onClick={() => setDetail(record)}>View</button>
             </div></td>
           </tr>)}</tbody>
@@ -1762,18 +1763,18 @@ function MembershipsView() {
               <th>Billing Cycle</th><th>Validity / Renewal</th><th>Expiration / Next Billing</th>
               <th>Payment</th><th>Plan Status</th><th>Action</th></tr></thead>
             <tbody>{list.map((record) => <tr key={record.id}>
-              <td><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
+              <td data-label="Client"><Link className="client-record-link" to={`/dashboard/clients/${record.client?.id}`}>{record.client?.name || "Client"}</Link>
                 <small>{record.client?.email}</small></td>
-              <td>{record.purchasedPlan}</td>
-              <td>{record.className}</td>
-              <td>{fmtMoney(record.amountPaid, record.currency)}
+              <td data-label="Membership / Plan">{record.purchasedPlan}</td>
+              <td data-label="Class">{record.className}</td>
+              <td data-label="Amount">{fmtMoney(record.amountPaid, record.currency)}
                 <small>{record.membershipType === "one_time" ? "One-Time Payment" : `per ${record.billingCycle}`}</small></td>
-              <td>{record.membershipType === "one_time" ? "—" : record.billingCycle}</td>
-              <td>{record.membershipType === "one_time" ? record.validityPeriod : record.renewalStatus}</td>
-              <td>{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
-              <td><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>
-              <td><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
-              <td>{record.paymentStatus === "Pending Cash Payment"
+              <td data-label="Billing Cycle">{record.membershipType === "one_time" ? "—" : record.billingCycle}</td>
+              <td data-label="Validity / Renewal">{record.membershipType === "one_time" ? record.validityPeriod : record.renewalStatus}</td>
+              <td data-label="Expiration / Next Billing">{date(record.membershipType === "one_time" ? record.expirationDate : record.nextBillingDate)}</td>
+              <td data-label="Payment"><span className={"status-tag " + (record.paymentStatus === "Paid" ? "accepted" : "pending")}>{record.paymentStatus}</span></td>
+              <td data-label="Plan Status"><span className={"status-tag " + tag(record.planStatus)}>{record.planStatus}</span></td>
+              <td data-label="Action">{record.paymentStatus === "Pending Cash Payment"
                 ? <button className="btn sm" onClick={() => markCashPaid(record)}>Mark as Paid</button>
                 : "—"}</td>
             </tr>)}</tbody>

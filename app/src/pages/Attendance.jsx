@@ -114,11 +114,14 @@ export default function Attendance() {
           <thead><tr><th>Class</th><th>Date and Time</th><th>Instructor</th><th>Room</th>
             <th>Booked</th><th>Capacity</th><th>Attendance Status</th><th>Action</th></tr></thead>
           <tbody>{sessions.map((session) => <tr key={session.id}>
-            <td><strong>{session.title}</strong></td><td>{fmtRange(session.startAt, session.endAt)}</td>
-            <td>{session.instructor?.name || "—"}</td><td>{session.room?.name || "—"}</td>
-            <td>{session.bookings.length}</td><td>{session.capacity}</td>
-            <td><span className="status-tag pending">{classStatus(session)}</span></td>
-            <td><button className="btn ghost sm" onClick={() => openAttendance(session)}>View Attendance</button></td>
+            <td data-label="Class"><strong>{session.title}</strong></td>
+            <td data-label="Date and Time">{fmtRange(session.startAt, session.endAt)}</td>
+            <td data-label="Instructor">{session.instructor?.name || "—"}</td>
+            <td data-label="Room">{session.room?.name || "—"}</td>
+            <td data-label="Booked">{session.bookings.length}</td>
+            <td data-label="Capacity">{session.capacity}</td>
+            <td data-label="Attendance"><span className="status-tag pending">{classStatus(session)}</span></td>
+            <td data-label="Action"><button className="btn ghost sm" onClick={() => openAttendance(session)}>View Attendance</button></td>
           </tr>)}</tbody>
         </table></div>}
 
