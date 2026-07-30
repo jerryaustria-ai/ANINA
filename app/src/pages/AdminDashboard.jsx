@@ -568,15 +568,15 @@ function ScheduleView() {
       />
 
       <Modal open={!!sel} onClose={() => setSel(null)} title={sel?.title}
-        footer={sel && <>{sel.status === "pending_approval" ? <>
+        footer={sel && <>{sel.status === "pending_approval" ? <div className="schedule-review-actions">
           <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Assign Room</button>
           <button className="btn danger" onClick={() => setScheduleReview({ session: sel, action: "reject", text: "" })} disabled={busy}>Reject</button>
           <button className="btn ghost" onClick={() => api(`/sessions/${sel.id}/hold`, { method: "POST", body: {} })
             .then(() => { toast.info("Schedule placed on hold."); setSel(null); return load(); })
             .catch((error) => toast.error(error.message))} disabled={busy}>Put on Hold</button>
           <button className="btn clay" onClick={() => setScheduleReview({ session: sel, action: "changes", text: "" })} disabled={busy}>Request Changes</button>
-          <button className="btn" onClick={() => approveSchedule(sel)} disabled={busy}>Approve &amp; Publish</button>
-        </> : !selectedClassEnded ? <>
+          <button className="btn schedule-review-primary" onClick={() => approveSchedule(sel)} disabled={busy}>Approve &amp; Publish</button>
+        </div> : !selectedClassEnded ? <>
           <button className="btn ghost" onClick={() => editSchedule(sel)}>Edit / Reschedule</button>
           {sel.status === "on_hold" && <button className="btn" onClick={() =>
             api(`/sessions/${sel.id}/review-held`, { method: "POST", body: {} })

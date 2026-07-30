@@ -327,6 +327,14 @@ a { color:var(--sage-deep); }
 .modal-x { border:none; background:none; font-size:1.5rem; color:var(--ink-mute); line-height:1; }
 .modal-body { padding:1.2rem; }
 .modal-foot { padding:1rem 1.2rem; border-top:1px solid var(--line); display:flex; gap:0.6rem; justify-content:flex-end; }
+.schedule-review-actions { width:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.65rem; }
+.schedule-review-actions .btn { width:100%; min-height:44px; padding:0.65rem 0.8rem; border-radius:8px; white-space:nowrap; }
+.schedule-review-actions .schedule-review-primary { grid-column:1 / -1; }
+
+@media (max-width:520px) {
+  .schedule-review-actions { grid-template-columns:1fr; }
+  .schedule-review-actions .schedule-review-primary { grid-column:auto; }
+}
 
 .field { margin-bottom:0.9rem; }
 .field label { display:block; font-size:0.8rem; color:var(--ink-soft); margin-bottom:0.3rem; font-weight:500; }
