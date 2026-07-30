@@ -233,7 +233,7 @@ export async function markCashPurchasePaid(purchaseId, { actorId, paymentReferen
     _id: purchaseId,
     paymentMethod: "Cash",
     status: "pending_cash_payment",
-    enrollmentStatus: "enrolled",
+    enrollmentStatus: { $in: ["confirmed", "enrolled"] },
   }).populate("tier session booking membership client");
   if (!purchase) throw Object.assign(new Error("Pending cash enrollment not found."), { status: 404 });
 
