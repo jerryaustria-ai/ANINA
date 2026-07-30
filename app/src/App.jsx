@@ -16,6 +16,7 @@ import CashEnrollmentConfirmation from "./pages/CashEnrollmentConfirmation.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
 import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
 import ProfileSettings from "./pages/ProfileSettings.jsx";
+import PromoCodes from "./pages/PromoCodes.jsx";
 import Attendance from "./pages/Attendance.jsx";
 import Avatar from "./components/Avatar.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
@@ -67,6 +68,7 @@ function MenuIcon({ name }) {
     membership: <><circle cx="8" cy="12" r="5"/><path d="M13 9h8M13 15h8"/></>,
     payments: <><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></>,
     audit: <><path d="M5 3h14v18H5z"/><path d="M9 7h6M9 11h6M9 15h4"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7 7 0 0 0 15 6l-.3-2.6h-4L10.4 6A7 7 0 0 0 8 7.1l-2.4-1-2 3.4L5.1 11a7 7 0 0 0 0 2l-1.5 1.5 2 3.4 2.4-1A7 7 0 0 0 10.4 18l.3 2.6h4L15 18a7 7 0 0 0 1.5-1.1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></>,
   };
   return <svg className="menu-icon" viewBox="0 0 24 24" aria-hidden="true"
     fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -154,6 +156,10 @@ function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSideba
             </button>
             {profileOpen && <div className="profile-dropdown">
               <button onClick={() => nav("/dashboard/profile")}><MenuIcon name="profile" />Profile Settings</button>
+              {user.role === "admin" && <div className="profile-settings-group">
+                <span><MenuIcon name="settings" />Settings</span>
+                <button onClick={() => nav("/dashboard/settings/promo-codes")}>Promo Codes</button>
+              </div>}
               <button className="danger-link" onClick={() => {
                 logout(); nav("/"); toast.info("You have been signed out.");
               }}><MenuIcon name="audit" />Sign out</button>
@@ -197,6 +203,7 @@ function Dashboard() {
               <Route path="tiers" element={<AdminDashboard view="tiers" />} />
               <Route path="payments" element={<AdminDashboard view="payments" />} />
               <Route path="memberships" element={<AdminDashboard view="memberships" />} />
+              <Route path="settings/promo-codes" element={<PromoCodes />} />
               <Route path="clients/:clientId" element={<ClientRecordDetails />} />
             </>
           )}

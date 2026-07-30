@@ -18,6 +18,11 @@ import { findActiveDuplicate, findActiveScheduleConflict } from "../services/dup
 import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { VAT_RATE, vatInclusiveBreakdown } from "../utils/vat.js";
 import { createAuditLog } from "../services/audit.js";
+import {
+  applyPromoToPurchase,
+  removePromoFromPurchase,
+  revalidateAppliedPromo,
+} from "../services/promoCodes.js";
 
 const router = Router();
 const safeSession = (session) => session?.status === "published" &&
@@ -160,7 +165,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
     fullName, email, phone, session: session._id, tier: tier?._id || null,
     planSnapshot: directCash ? { ...selectedPlan, id: "cash", _id: undefined, directCash: true }
       : planSnapshot(tier),
-    subtotal, vatAmount, totalAmount, currency: selectedPlan.currency,
+    subtotal, vatAmount, totalAmount, originalAmount: totalAmount, currency: selectedPlan.currency,
     referenceId: `guest_${Date.now()}_${crypto.randomBytes(5).toString("hex")}`,
     accessToken: crypto.randomBytes(24).toString("hex"),
     duplicateOverrideBy: overrideRequested ? req.user._id : null,
@@ -203,6 +208,30 @@ router.get("/orders/:id", asyncHandler(async (req, res) => {
     }
   }
   res.json({ order: purchase.toPublic() });
+}));
+
+router.post("/orders/:id/promo-code", asyncHandler(async (req, res) => {
+  const purchase = await loadAuthorizedOrder(req);
+  if (!["pending_payment", "payment_pending"].includes(purchase.status) || purchase.paidAt) {
+    return res.status(409).json({ error: "Promo codes can only be applied before payment is completed." });
+  }
+  if (purchase.xenditSessionId) {
+    return res.status(409).json({ error: "The payment session has already been created. Start a new checkout to change the promo code." });
+  }
+  await applyPromoToPurchase(purchase, req.body.code);
+  res.json({ order: purchase.toPublic(), message: "Promo code applied successfully." });
+}));
+
+router.delete("/orders/:id/promo-code", asyncHandler(async (req, res) => {
+  const purchase = await loadAuthorizedOrder(req);
+  if (!["pending_payment", "payment_pending"].includes(purchase.status) || purchase.paidAt) {
+    return res.status(409).json({ error: "The promo code can no longer be removed." });
+  }
+  if (purchase.xenditSessionId) {
+    return res.status(409).json({ error: "The payment session has already been created. Start a new checkout to change the promo code." });
+  }
+  await removePromoFromPurchase(purchase);
+  res.json({ order: purchase.toPublic(), message: "Promo code removed." });
 }));
 
 router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
@@ -250,6 +279,7 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
       });
     }
   }
+  await revalidateAppliedPromo(purchase);
 
   if (!purchase.xenditSessionId) {
     const configured = String(process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
@@ -262,7 +292,7 @@ router.post("/orders/:id/payment-session", asyncHandler(async (req, res) => {
     const payment = await xendit.createOneTimePaymentSession({
       referenceId: purchase.referenceId,
       customer: purchase,
-      plan: purchase.planSnapshot,
+      plan: { ...purchase.planSnapshot, amount: purchase.totalAmount },
       successUrl: `${appUrl}/guest/payment-result/${purchase._id}?token=${purchase.accessToken}&return=success`,
       cancelUrl: `${appUrl}/guest/payment-result/${purchase._id}?token=${purchase.accessToken}&return=cancelled`,
     });
@@ -315,6 +345,7 @@ router.post("/orders/:id/cash-confirmation", asyncHandler(async (req, res) => {
     error: "You already have an active booking or class plan matching this selection.",
     code: "DUPLICATE_ACTIVE_PURCHASE",
   });
+  await revalidateAppliedPromo(purchase);
 
   purchase.paymentMethod = "Cash";
   purchase.status = "pending_payment";

@@ -12,6 +12,8 @@ import { createNotification, notifyAdmins } from "./notifications.js";
 import QRCode from "qrcode";
 import { issueCheckInToken } from "./checkIn.js";
 import { reserveMembershipCredit } from "./membership.js";
+import { recordPromoUsage } from "./promoCodes.js";
+import { createAuditLog } from "./audit.js";
 
 function periodEnd(tier) {
   const date = new Date();
@@ -67,6 +69,9 @@ async function saveSuccessfulBookingHistory({ client, purchase, booking, members
     validityIntervalCount: tier.intervalCount || 1,
     validUntil: membership?.currentPeriodEnd || null,
     amountPaid: purchase.totalAmount,
+    originalAmount: purchase.originalAmount || purchase.totalAmount,
+    promoCode: purchase.promoCodeText || "",
+    discountAmount: purchase.discountAmount || 0,
     currency: purchase.currency,
     paymentMethod: purchase.paymentMethod || "Xendit",
     paymentStatus: "successful",
@@ -172,6 +177,24 @@ async function performFulfillment(purchaseId, payment = {}) {
   await purchase.save();
   if (!cashPending) {
     await saveSuccessfulBookingHistory({ client, purchase, booking, membership, session });
+    const promoUsage = await recordPromoUsage(purchase._id);
+    if (promoUsage) {
+      await createAuditLog({
+        actor: client,
+        action: "PROMO_CODE_USED",
+        description: `${client.name} used promo code ${purchase.promoCodeText} in confirmed transaction ${purchase.referenceId}.`,
+        entityType: "promo_code",
+        entityId: purchase.promoCode,
+        entityLabel: purchase.promoCodeText,
+        updatedValue: {
+          referenceId: purchase.referenceId,
+          originalAmount: purchase.originalAmount,
+          discountAmount: purchase.discountAmount,
+          finalAmount: purchase.totalAmount,
+          usedAt: promoUsage.promoUsageRecordedAt,
+        },
+      });
+    }
   }
   let qrCodeBase64 = "";
   if (!cashPending && bookingStatus === "accepted") {
@@ -266,6 +289,24 @@ export async function markCashPurchasePaid(purchaseId, { actorId, paymentReferen
   }
   await purchase.booking.save();
   await purchase.save();
+  const promoUsage = await recordPromoUsage(purchase._id);
+  if (promoUsage) {
+    await createAuditLog({
+      actor: purchase.client,
+      action: "PROMO_CODE_USED",
+      description: `${purchase.client.name} used promo code ${purchase.promoCodeText} in confirmed cash transaction ${purchase.referenceId}.`,
+      entityType: "promo_code",
+      entityId: purchase.promoCode,
+      entityLabel: purchase.promoCodeText,
+      updatedValue: {
+        referenceId: purchase.referenceId,
+        originalAmount: purchase.originalAmount,
+        discountAmount: purchase.discountAmount,
+        finalAmount: purchase.totalAmount,
+        usedAt: promoUsage.promoUsageRecordedAt,
+      },
+    });
+  }
   await saveSuccessfulBookingHistory({
     client: purchase.client,
     purchase,

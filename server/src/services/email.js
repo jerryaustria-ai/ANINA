@@ -112,6 +112,10 @@ function renderEmail(purchase, type, details = {}) {
     ...(type === "refund_processed"
       ? [["Refunded amount", money(details.amount ?? purchase.refundedAmount, purchase.currency)]]
       : [
+          ...(purchase.discountAmount > 0 ? [
+            ["Original amount", money(purchase.originalAmount || purchase.totalAmount, purchase.currency)],
+            [`Promo discount (${purchase.promoCodeText})`, `− ${money(purchase.discountAmount, purchase.currency)}`],
+          ] : []),
           ["VATable sales (subtotal)", money(vat.subtotal, purchase.currency)],
           ["VAT (12%)", money(vat.vatAmount, purchase.currency)],
           ["Total amount paid", money(vat.totalAmount, purchase.currency)],

@@ -20,6 +20,7 @@ export default function GuestCheckout() {
   const [order, setOrder] = useState(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [promoText, setPromoText] = useState("");
 
   const load = () => api(`/guest-checkout/orders/${orderId}?token=${encodeURIComponent(token)}`)
     .then(({ order: value }) => {
@@ -79,6 +80,38 @@ export default function GuestCheckout() {
     }
   }
 
+  async function applyPromo() {
+    if (!promoText.trim()) return toast.warning("Enter a promo code.");
+    setWorking(true);
+    try {
+      const result = await api(`/guest-checkout/orders/${orderId}/promo-code`, {
+        method: "POST", body: { token, code: promoText },
+      });
+      setOrder(result.order);
+      setPromoText("");
+      toast.success("Promo code applied successfully.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function removePromo() {
+    setWorking(true);
+    try {
+      const result = await api(`/guest-checkout/orders/${orderId}/promo-code`, {
+        method: "DELETE", body: { token },
+      });
+      setOrder(result.order);
+      toast.info("Promo code removed.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setWorking(false);
+    }
+  }
+
   if (error) return <div className="guest-state error"><p>{error}</p><Link to="/schedule">Back to schedule</Link></div>;
   if (!order) return <div className="guest-state">Loading your checkout…</div>;
   const done = ["confirmed", "waitlisted"].includes(order.status);
@@ -101,6 +134,10 @@ export default function GuestCheckout() {
           <p>{new Date(order.session.startAt).toLocaleDateString("en-PH", { dateStyle: "full" })}, {fmtTime(order.session.startAt)}</p>
           <dl>
             <div><dt>Validity</dt><dd>{validity(plan)}</dd></div>
+            {order.discountAmount > 0 && <div><dt>Original VAT-Inclusive Amount</dt>
+              <dd>{money(order.originalAmount, order.currency)}</dd></div>}
+            {order.discountAmount > 0 && <div className="promo-discount-row"><dt>Promo Discount ({order.promoCodeText})</dt>
+              <dd>− {money(order.discountAmount, order.currency)}</dd></div>}
             <div><dt>VATable Sales (Subtotal)</dt><dd>{money(order.subtotal, order.currency)}</dd></div>
             <div><dt>VAT (12%)</dt><dd>{money(order.vatAmount, order.currency)}</dd></div>
             <div className="checkout-total"><dt>Total Amount to Pay</dt><dd>{money(order.totalAmount, order.currency)}</dd></div>
@@ -111,6 +148,19 @@ export default function GuestCheckout() {
           {!done && !awaitingCashPayment && <div className="checkout-payment-readonly">
             <span>Payment Method</span>
             <strong>{cashOnly ? "Cash Payment" : "Online Payment (Xendit)"}</strong>
+          </div>}
+          {!done && !awaitingCashPayment && <div className="checkout-promo">
+            <label>Promo Code</label>
+            {order.promoCodeText ? <div className="checkout-promo-applied">
+              <span><strong>{order.promoCodeText}</strong> applied</span>
+              <button type="button" onClick={removePromo} disabled={working}>Remove</button>
+            </div> : <div className="checkout-promo-entry">
+              <input value={promoText} onChange={(event) => setPromoText(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); applyPromo(); } }}
+                placeholder="Enter promo code" autoCapitalize="characters" />
+              <button type="button" onClick={applyPromo} disabled={working || !promoText.trim()}>Apply</button>
+            </div>}
+            <small>Only one promo code may be applied per transaction.</small>
           </div>}
           {!done && !awaitingCashPayment && <button className="guest-primary"
             onClick={cashOnly ? requestCashConfirmation : pay} disabled={working}>
