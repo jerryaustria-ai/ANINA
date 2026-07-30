@@ -335,12 +335,39 @@ a { color:var(--sage-deep); }
 .cash-payment-detail-actions { width:100%; display:flex; justify-content:flex-end; gap:0.65rem; flex-wrap:wrap; }
 .cash-payment-detail-actions .btn { min-height:42px; border-radius:8px; }
 .modal-foot:has(.cash-payment-detail-actions) { position:sticky; bottom:0; z-index:2; background:var(--white); }
+.attendance-modal-actions { width:100%; display:flex; justify-content:flex-end; gap:0.6rem; flex-wrap:wrap; }
+.attendance-details { display:grid; gap:1rem; }
+.attendance-class-summary { display:flex; flex-wrap:wrap; gap:0.45rem 1.25rem; color:var(--ink-soft); font-size:0.88rem; }
+.attendance-filters { display:grid; grid-template-columns:minmax(220px,1fr) auto auto; gap:0.55rem; }
+.attendance-filters input,.attendance-filters select { min-width:0; padding:0.58rem 0.7rem; border:1px solid var(--line);
+  border-radius:8px; background:var(--white); color:var(--ink); font:inherit; }
+.attendance-roster { display:grid; gap:0.8rem; }
+.attendance-attendee { border:1px solid var(--line); border-radius:10px; padding:0.9rem; background:#fffdfa; }
+.attendance-attendee-head { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; }
+.attendance-attendee-head div { display:grid; gap:0.18rem; }
+.attendance-attendee-head div span { color:var(--ink-mute); font-size:0.82rem; }
+.client-type { padding:0.22rem 0.55rem; border-radius:100px; background:var(--cream); color:var(--ink-soft); font-size:0.74rem; white-space:nowrap; }
+.attendance-meta-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.65rem; margin:0.8rem 0; }
+.attendance-meta-grid span { display:grid; gap:0.18rem; color:var(--ink-mute); font-size:0.73rem; text-transform:uppercase; letter-spacing:.03em; }
+.attendance-meta-grid strong { color:var(--ink); font-size:0.82rem; text-transform:none; letter-spacing:0; }
+.attendance-payment-warning { padding:0.55rem 0.7rem; border:1px solid #e8d5a8; border-radius:7px; background:#fff7e7; color:#7a5a1a; font-size:0.82rem; }
+.attendance-lock-note { margin-top:0.45rem; color:var(--ink-mute); font-size:0.8rem; }
+.attendance-choice { display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.8rem; }
+.attendance-choice button { padding:0.4rem 0.65rem; border:1px solid var(--line); border-radius:7px; background:var(--white); color:var(--ink-soft); }
+.attendance-choice button.selected { border-color:var(--sage-deep); background:var(--sage-deep); color:#fff; }
+.attendance-choice button.selected.absent,.attendance-choice button.selected.no_show { border-color:#b4685e; background:#b4685e; }
+.attendance-choice button.selected.late,.attendance-choice button.selected.excused { border-color:var(--clay); background:var(--clay); }
+.attendance-choice button:disabled { opacity:.45; cursor:not-allowed; }
 
 @media (max-width:520px) {
   .schedule-review-actions { grid-template-columns:1fr; }
   .schedule-review-actions .schedule-review-primary { grid-column:auto; }
   .cash-payment-detail-actions { display:grid; grid-template-columns:1fr; }
   .cash-payment-detail-actions .btn { width:100%; }
+  .attendance-modal-actions { display:grid; grid-template-columns:1fr; }
+  .attendance-modal-actions .btn { width:100%; text-align:center; }
+  .attendance-filters,.attendance-meta-grid { grid-template-columns:1fr; }
+  .attendance-attendee-head { display:grid; }
 }
 
 .field { margin-bottom:0.9rem; }

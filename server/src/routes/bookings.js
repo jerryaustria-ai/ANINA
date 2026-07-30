@@ -283,6 +283,49 @@ router.get(
   })
 );
 
+// Role-aware attendance register. Only confirmed client and guest bookings
+// appear; pending requests and unpaid cash reservations remain excluded.
+router.get(
+  "/attendance",
+  requireRole("instructor", "admin"),
+  asyncHandler(async (req, res) => {
+    await finalizeEndedPresentBookings();
+    const sessionFilter = {
+      status: { $in: ["published", "completed"] },
+      ...(req.user.role === "instructor" ? { instructor: req.user._id } : {}),
+    };
+    if (req.query.from || req.query.to) {
+      sessionFilter.startAt = {};
+      if (req.query.from) sessionFilter.startAt.$gte = new Date(req.query.from);
+      if (req.query.to) sessionFilter.startAt.$lte = new Date(req.query.to);
+    }
+    const sessions = await ClassSession.find(sessionFilter)
+      .populate("instructor", "name email picture")
+      .populate("room", "name location")
+      .sort("-startAt");
+    const sessionIds = sessions.map((session) => session._id);
+    const bookings = await Booking.find({
+      session: { $in: sessionIds },
+      status: { $in: ["accepted", "attended", "no_show"] },
+    })
+      .populate("client", "name email phone picture")
+      .sort("createdAt");
+    const bookingsBySession = new Map();
+    for (const booking of bookings) {
+      const key = String(booking.session);
+      if (!bookingsBySession.has(key)) bookingsBySession.set(key, []);
+      bookingsBySession.get(key).push(booking.toPublic());
+    }
+    res.json({
+      serverNow: new Date().toISOString(),
+      sessions: sessions.map((session) => ({
+        ...session.toPublic(),
+        bookings: bookingsBySession.get(String(session._id)) || [],
+      })),
+    });
+  })
+);
+
 // Admin can assign a client directly. The booking is accepted and occupies a seat.
 router.post(
   "/admin",
@@ -351,6 +394,58 @@ async function loadForDecision(req) {
   const booking = await Booking.findById(req.params.id).populate("session");
   if (!booking) throw new HttpError(404, "Booking not found");
   if (!isOwnerInstructor(req, booking.session)) throw new HttpError(403, "Not your class");
+  return booking;
+}
+
+async function saveAttendance({ booking, actor, status }) {
+  const serverNow = new Date();
+  if (serverNow < new Date(booking.session.startAt)) {
+    throw new HttpError(409, "Attendance can only be recorded once the scheduled class has started.");
+  }
+  const classEnded = new Date(booking.session.endAt) <= serverNow;
+  if (booking.session.status === "cancelled") {
+    throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
+  }
+  if (booking.status === "cancelled") {
+    throw new HttpError(409, "Attendance cannot be recorded for a cancelled booking.");
+  }
+  if (booking.paymentStatus !== "paid") {
+    throw new HttpError(
+      409,
+      "Payment is still pending. Please complete your payment before attending the class."
+    );
+  }
+  if (booking.checkInUsedAt && actor.role !== "admin") {
+    throw new HttpError(409, "Attendance was confirmed by QR check-in and can only be changed by an Admin.");
+  }
+  if (!["accepted", "attended", "no_show"].includes(booking.status)) {
+    throw new HttpError(409, "Attendance can only be recorded for a confirmed booking.");
+  }
+  const attendanceStatus = String(status || "").toLowerCase();
+  if (!["present", "absent", "late", "excused", "no_show"].includes(attendanceStatus)) {
+    throw new HttpError(400, "Select Present, Absent, Late, Excused, or No Show.");
+  }
+
+  const previous = booking.toObject({ depopulate: true });
+  booking.attendanceStatus = attendanceStatus;
+  booking.attendanceRecordedAt = serverNow;
+  booking.attendanceRecordedBy = actor._id;
+  if (classEnded) {
+    booking.status = attendanceStatus === "present" ? "attended" : "no_show";
+    if (attendanceStatus === "present" && booking.creditStatus === "reserved") {
+      await consumeReservedCredit(booking.membership);
+      booking.creditStatus = "consumed";
+    }
+  }
+  await booking.save();
+  await recordBookingAudit({
+    booking,
+    session: booking.session,
+    actor,
+    action: "BOOKING_ATTENDANCE_RECORDED",
+    description: `Marked ${booking.session.title} attendance as ${attendanceStatus.replace("_", " ")}.`,
+    previousValue: previous,
+  });
   return booking;
 }
 
@@ -552,60 +647,13 @@ router.post(
   })
 );
 
-// POST /api/bookings/:id/attendance { status: "present" | "absent" | "no_show" }
+// POST /api/bookings/:id/attendance
 router.post(
   "/:id/attendance",
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const booking = await loadForDecision(req);
-    const serverNow = new Date();
-    if (serverNow < new Date(booking.session.startAt)) {
-      throw new HttpError(409, "Attendance can only be recorded once the scheduled class has started.");
-    }
-    const classEnded = new Date(booking.session.endAt) <= serverNow;
-    if (booking.session.status === "cancelled") {
-      throw new HttpError(409, "Attendance cannot be recorded for a cancelled class.");
-    }
-    if (booking.status === "cancelled") throw new HttpError(409, "Attendance cannot be recorded for a cancelled booking.");
-    if (booking.paymentStatus !== "paid") {
-      throw new HttpError(
-        409,
-        "Payment is still pending. Please complete your payment before attending the class."
-      );
-    }
-    if (booking.checkInUsedAt && req.user.role !== "admin") {
-      throw new HttpError(409, "Attendance was confirmed by QR check-in and can only be changed by an Admin.");
-    }
-    if (!["accepted", "attended", "no_show"].includes(booking.status)) {
-      throw new HttpError(409, "Attendance can only be recorded for a confirmed booking.");
-    }
-    const attendanceStatus = String(req.body?.status || "").toLowerCase();
-    if (!["present", "absent", "no_show"].includes(attendanceStatus)) {
-      throw new HttpError(400, "Attendance status must be Present, Absent, or No Show.");
-    }
-
-    const previous = booking.toObject({ depopulate: true });
-    booking.attendanceStatus = attendanceStatus;
-    booking.attendanceRecordedAt = new Date();
-    booking.attendanceRecordedBy = req.user._id;
-    // Before class end, attendance is provisional and the confirmed booking
-    // remains active. Once the class has ended, persist the final outcome.
-    if (classEnded) {
-      booking.status = attendanceStatus === "present" ? "attended" : "no_show";
-      if (attendanceStatus === "present" && booking.creditStatus === "reserved") {
-        await consumeReservedCredit(booking.membership);
-        booking.creditStatus = "consumed";
-      }
-    }
-    await booking.save();
-    await recordBookingAudit({
-      booking,
-      session: booking.session,
-      actor: req.user,
-      action: "BOOKING_ATTENDANCE_RECORDED",
-      description: `Marked ${booking.session.title} attendance as ${attendanceStatus.replace("_", " ")}.`,
-      previousValue: previous,
-    });
+    await saveAttendance({ booking, actor: req.user, status: req.body?.status });
     res.json({ booking: booking.toPublic() });
   })
 );

@@ -34,7 +34,7 @@ const bookingSchema = new mongoose.Schema(
     },
     attendanceStatus: {
       type: String,
-      enum: ["pending", "present", "absent", "no_show"],
+      enum: ["pending", "present", "absent", "late", "excused", "no_show"],
       default: "pending",
       index: true,
     },
@@ -60,7 +60,9 @@ bookingSchema.methods.toPublic = function () {
   const classEnded = Boolean(se?.endAt && new Date(se.endAt) <= new Date());
   const displayStatus = attendanceStatus === "present"
     ? (classEnded ? "fully_used" : "present")
-    : this.status;
+    : classEnded && ["absent", "late", "excused", "no_show"].includes(attendanceStatus)
+      ? attendanceStatus
+      : this.status;
   return {
     id: this._id,
     session: se,

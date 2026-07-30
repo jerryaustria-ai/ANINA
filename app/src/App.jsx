@@ -16,6 +16,7 @@ import CashEnrollmentConfirmation from "./pages/CashEnrollmentConfirmation.jsx";
 import PaymentResult from "./pages/PaymentResult.jsx";
 import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
 import ProfileSettings from "./pages/ProfileSettings.jsx";
+import Attendance from "./pages/Attendance.jsx";
 import Avatar from "./components/Avatar.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
@@ -28,6 +29,7 @@ const MENU = {
   ],
   instructor: [
     ["/dashboard", "My Classes", "calendar"],
+    ["/dashboard/attendance", "Attendance", "attendance"],
     ["/dashboard/check-in", "QR Check-in", "scan"],
     ["/dashboard/profile", "Profile", "profile"],
   ],
@@ -35,6 +37,7 @@ const MENU = {
     ["/dashboard", "Overview", "home"],
     ["/dashboard/schedule", "Studio Schedule", "calendar"],
     ["/dashboard/approvals", "Schedule Approval", "approve"],
+    ["/dashboard/attendance", "Attendance", "attendance"],
     ["/dashboard/check-in", "QR Check-in", "scan"],
     ["/dashboard/people", "People", "people"],
     ["/dashboard/class-titles", "Classes", "classes"],
@@ -57,6 +60,7 @@ function MenuIcon({ name }) {
     profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
     scan: <><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M9 9h6v6H9z"/></>,
     approve: <><path d="M9 11l2 2 4-5"/><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3V1M16 3V1"/></>,
+    attendance: <><path d="M5 3h14v18H5z"/><path d="m8 8 2 2 5-5M8 15h8M8 18h6"/></>,
     people: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20a6 6 0 0 1 12 0M15 16a5 5 0 0 1 6 4"/></>,
     classes: <><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></>,
     rooms: <><path d="M4 21V3h12v18M16 8h4v13M8 7h4M8 11h4M8 15h4"/></>,
@@ -156,6 +160,8 @@ function Dashboard() {
           {user.role === "client" && <Route index element={<ClientDashboard />} />}
           {user.role === "client" && <Route path="membership" element={<ClientMembership />} />}
           {user.role === "instructor" && <Route index element={<InstructorDashboard />} />}
+          {["admin", "instructor"].includes(user.role) &&
+            <Route path="attendance" element={<Attendance />} />}
           {["admin", "instructor"].includes(user.role) && <Route path="check-in" element={
             <Suspense fallback={<div className="spinner">Loading scanner…</div>}><CheckInScanner /></Suspense>
           } />}

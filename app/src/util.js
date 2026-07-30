@@ -47,7 +47,8 @@ export const STATUS_LABEL = {
   changes_requested: "Changes Requested", on_hold: "On Hold",
   cancellation_requested: "Cancellation Requested", cancelled: "Cancelled", completed: "Completed",
   pending: "Pending", accepted: "Accepted", waitlisted: "Waitlisted", declined: "Declined",
-  present: "Present", fully_used: "Fully Used", attended: "Fully Used", no_show: "No Show",
+  present: "Present", late: "Late", excused: "Excused", absent: "Absent",
+  fully_used: "Fully Used", attended: "Fully Used", no_show: "No Show",
 };
 
 export function bookingStatusLabel(booking) {
