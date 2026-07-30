@@ -1678,16 +1678,18 @@ function PaymentsView() {
               {statusLabel(record.enrollmentStatus)}</span></td>
             <td><div className="table-actions">
               <button className="btn ghost sm" onClick={() => setDetail(record)}>View</button>
-              {record.paymentStatus === "pending" && <>
-                <button className="btn sm" onClick={() => openAction("paid", record)}>Mark as Paid</button>
-                <button className="btn danger sm" onClick={() => openAction("cancel", record)}>Cancel</button>
-              </>}
             </div></td>
           </tr>)}</tbody>
         </table></div>}
 
     <Modal open={!!detail} onClose={() => setDetail(null)} title="Cash Payment Details"
-      footer={<button className="btn ghost" onClick={() => setDetail(null)}>Close</button>}>
+      footer={<div className="cash-payment-detail-actions">
+        <button className="btn ghost" onClick={() => setDetail(null)}>Close</button>
+        {detail?.paymentStatus === "pending" && <>
+          <button className="btn danger" onClick={() => openAction("cancel", detail)}>Cancel</button>
+          <button className="btn" onClick={() => openAction("paid", detail)}>Mark as Paid</button>
+        </>}
+      </div>}>
       {detail && <dl className="detail-list">
         <div><dt>Client</dt><dd>{detail.client.name}</dd></div>
         <div><dt>Email</dt><dd>{detail.client.email}</dd></div>
