@@ -5,7 +5,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { useScheduleRefresh } from "../useScheduleRefresh.js";
-import { fmtRange, toLocalInput, dateAtHour, STATUS_LABEL } from "../util.js";
+import { bookingStatusLabel, fmtRange, toLocalInput, dateAtHour, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
 const blankForm = {
@@ -376,7 +376,7 @@ export default function InstructorDashboard() {
                   <li key={b.id}>
                     <Avatar src={b.client?.picture} name={b.client?.name} size={34} />
                     <div className="who"><div className="nm">{b.client?.name}</div><div className="em">{b.client?.email}</div></div>
-                    <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status] || b.status}</span>
+                    <span className={"status-tag " + b.status}>{bookingStatusLabel(b)}</span>
                     {b.status === "pending" && <>
                       <button className="btn sm" onClick={() => decide(b.id, "accept")} disabled={busy}>Accept</button>
                       <button className="btn danger sm" onClick={() => decide(b.id, "decline")} disabled={busy}>Decline</button>

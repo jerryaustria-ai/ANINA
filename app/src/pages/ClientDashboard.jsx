@@ -6,7 +6,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { useScheduleRefresh } from "../useScheduleRefresh.js";
-import { fmtRange, STATUS_LABEL } from "../util.js";
+import { bookingStatusLabel, fmtRange, STATUS_LABEL } from "../util.js";
 import { toast } from "react-toastify";
 
 function localDateKey(value) {
@@ -104,7 +104,7 @@ export default function ClientDashboard() {
       id: s.id, title: s.title, startAt: s.startAt, endAt: s.endAt, color: s.color,
       sub: `${s.instructor?.name || ""} · ${s.room?.name || ""}`,
       badge: unavailable === "cancelled" ? "Cancelled" : unavailable === "finished" ? "Finished"
-        : active ? "✓ " + STATUS_LABEL[b.status] : (s.seatsLeft > 0 ? `${s.seatsLeft} left` : "Full"),
+        : active ? "✓ " + bookingStatusLabel(b) : (s.seatsLeft > 0 ? `${s.seatsLeft} left` : "Full"),
       dim: !!unavailable || (!active && s.seatsLeft <= 0),
     };
   });
@@ -221,7 +221,7 @@ export default function ClientDashboard() {
               <div className="sub">{b.session.instructor?.name} · {b.session.room?.name}</div>
               <div className="sub">Payment: {b.paymentStatus === "paid" ? "Paid" : "Pending"}</div>
               <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span className={"status-tag " + b.status}>{STATUS_LABEL[b.status]}</span>
+                <span className={"status-tag " + b.status}>{bookingStatusLabel(b)}</span>
                 <span style={{ display: "flex", gap: "0.4rem" }}>
                   <button className="btn ghost sm" onClick={() => openReschedule(b)}>Reschedule</button>
                   <button className="btn danger sm" onClick={() => api(`/bookings/${b.id}/cancel`, { method: "POST" })
@@ -308,7 +308,7 @@ export default function ClientDashboard() {
             <p className="meta-line">🗓 {fmtRange(sel.startAt, sel.endAt)}</p>
             <p className="meta-line">📍 {sel.room?.name} · {sel.type === "private" ? "Private session" : "Group class"}</p>
             <p className="meta-line">👥 {sel.acceptedCount}/{sel.capacity} booked · {sel.seatsLeft} spot{sel.seatsLeft === 1 ? "" : "s"} left</p>
-            {selActive && <p className="meta-line">You're {STATUS_LABEL[selBooking.status].toLowerCase()} for this class.</p>}
+            {selActive && <p className="meta-line">You're {bookingStatusLabel(selBooking).toLowerCase()} for this class.</p>}
           </div>
         )}
       </Modal>

@@ -49,3 +49,11 @@ export const STATUS_LABEL = {
   pending: "Pending", accepted: "Accepted", waitlisted: "Waitlisted", declined: "Declined",
   present: "Present", fully_used: "Fully Used", attended: "Fully Used", no_show: "No Show",
 };
+
+export function bookingStatusLabel(booking) {
+  if (!booking) return "—";
+  if (booking.status === "pending" && ["unpaid", "pending"].includes(booking.paymentStatus)) {
+    return "Pending Payment";
+  }
+  return STATUS_LABEL[booking.status] || booking.status;
+}

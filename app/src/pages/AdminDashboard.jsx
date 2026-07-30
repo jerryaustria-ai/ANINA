@@ -5,7 +5,7 @@ import Modal from "../components/Modal.jsx";
 import Avatar from "../components/Avatar.jsx";
 import { useCalendar } from "../useCalendar.js";
 import { useScheduleRefresh } from "../useScheduleRefresh.js";
-import { fmtRange, fmtMoney, STATUS_LABEL, toLocalInput } from "../util.js";
+import { bookingStatusLabel, fmtRange, fmtMoney, STATUS_LABEL, toLocalInput } from "../util.js";
 import { toast } from "react-toastify";
 import { Link } from "react-router-dom";
 
@@ -625,7 +625,7 @@ function ScheduleView() {
               displayedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
                   <div><strong>{booking.client?.name || "Client"}</strong><span>
-                    <span className={"status-tag " + booking.status}>{STATUS_LABEL[booking.status] || booking.status}</span>
+                    <span className={"status-tag " + booking.status}>{bookingStatusLabel(booking)}</span>
                     {booking.paymentStatus === "paid" ? " · Paid" : ""}
                   </span></div>
                   <div className="schedule-booking-actions">
