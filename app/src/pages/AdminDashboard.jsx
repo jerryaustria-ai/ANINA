@@ -55,25 +55,22 @@ function OverviewView() {
   }
 
   const cards = data ? [
-    { label: "Total bookings", value: data.metrics.totalBookings, to: "/dashboard/schedule" },
-    { label: "Today's bookings", value: data.metrics.todayBookings, to: "/dashboard/schedule" },
-    { label: "Upcoming bookings", value: data.metrics.upcomingBookings, to: "/dashboard/schedule" },
-    { label: "Completed bookings", value: data.metrics.completedBookings, to: "/dashboard/attendance" },
-    { label: "Cancelled bookings", value: data.metrics.cancelledBookings, to: "/dashboard/schedule" },
-    { label: "Available instructors", value: data.metrics.availableInstructors, to: "/dashboard/people" },
-    { label: "Total clients", value: data.metrics.totalClients, to: "/dashboard/people" },
-    { label: "Pending approvals", value: data.metrics.pendingApprovals, to: "/dashboard/approvals" },
-    { label: "Cancellation requests", value: data.metrics.cancellationRequests, to: "/dashboard/schedule" },
+    ["Total bookings", data.metrics.totalBookings],
+    ["Today's bookings", data.metrics.todayBookings],
+    ["Upcoming bookings", data.metrics.upcomingBookings],
+    ["Completed bookings", data.metrics.completedBookings],
+    ["Cancelled bookings", data.metrics.cancelledBookings],
+    ["Available instructors", data.metrics.availableInstructors],
+    ["Total clients", data.metrics.totalClients],
+    ["Pending approvals", data.metrics.pendingApprovals],
+    ["Cancellation requests", data.metrics.cancellationRequests],
   ] : [];
 
   return <div className="page overview-page">
     <div className="page-head"><div><h1>Admin Dashboard</h1>
       <p>Studio activity, upcoming schedules, and operational reports.</p></div></div>
     <section className="overview-metrics">
-      {cards.map(({ label, value, to }) => <Link className="overview-metric-link" to={to}
-        key={label} aria-label={`${label}: ${value}. View details`}>
-        <article><span>{label}</span><strong>{value}</strong><small>View details →</small></article>
-      </Link>)}
+      {cards.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}
       {!data && <div className="empty">Loading dashboard…</div>}
     </section>
     <section className="overview-panel">
