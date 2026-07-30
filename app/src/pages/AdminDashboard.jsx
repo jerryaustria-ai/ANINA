@@ -625,7 +625,12 @@ function ScheduleView() {
               displayedBookings.map((booking) => (
                 <div className="schedule-booking" key={booking.id}>
                   <div><strong>{booking.client?.name || "Client"}</strong><span>
-                    <span className={"status-tag " + booking.status}>{bookingStatusLabel(booking)}</span>
+                    {booking.status === "pending" && ["unpaid", "pending"].includes(booking.paymentStatus)
+                      ? <Link className={"status-tag status-tag-link " + booking.status}
+                        to="/dashboard/payments" title="Open Pending Payments">
+                        {bookingStatusLabel(booking)}
+                      </Link>
+                      : <span className={"status-tag " + booking.status}>{bookingStatusLabel(booking)}</span>}
                     {booking.paymentStatus === "paid" ? " · Paid" : ""}
                   </span></div>
                   <div className="schedule-booking-actions">

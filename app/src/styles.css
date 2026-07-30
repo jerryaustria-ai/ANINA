@@ -272,6 +272,8 @@ a { color:var(--sage-deep); }
 .btn.danger { background:transparent; border-color:#b4685e; color:#b4685e; }
 .btn:disabled { opacity:0.45; cursor:not-allowed; }
 .btn.sm { padding:0.35rem 0.75rem; font-size:0.82rem; }
+.status-tag-link { text-decoration:none; cursor:pointer; transition:filter .18s ease, transform .18s ease; }
+.status-tag-link:hover { filter:brightness(.94); transform:translateY(-1px); }
 
 .toolbar-row { display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
 .chip-filter { display:flex; gap:0.35rem; flex-wrap:wrap; }
