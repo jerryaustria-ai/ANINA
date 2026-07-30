@@ -303,7 +303,19 @@ function ScheduleView() {
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("schedule");
     const session = id && sessions.find((item) => item.id === id);
-    if (session) setSel(session);
+    if (session) {
+      // Treat the schedule query parameter as a one-time deep link. Leaving it
+      // in the URL causes every calendar refresh to reopen a modal the user
+      // has already closed.
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete("schedule");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`,
+      );
+      setSel(session);
+    }
   }, [sessions]);
   useEffect(() => {
     const openRelated = (event) => {
