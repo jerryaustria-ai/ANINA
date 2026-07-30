@@ -74,7 +74,7 @@ function MenuIcon({ name }) {
   </svg>;
 }
 
-function DashboardNav({ sidebarOpen, setSidebarOpen }) {
+function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed }) {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
@@ -121,8 +121,20 @@ function DashboardNav({ sidebarOpen, setSidebarOpen }) {
       </aside>
       <header className="app-topbar">
         <div className="topbar-title">
-          <button className="sidebar-toggle" onClick={() => setSidebarOpen((value) => !value)}
-            aria-label="Toggle navigation" aria-expanded={sidebarOpen}>
+          <button className="sidebar-toggle"
+            aria-label={sidebarCollapsed ? "Show navigation" : "Hide navigation"}
+            aria-expanded={sidebarOpen || !sidebarCollapsed}
+            onClick={() => {
+              if (window.matchMedia("(max-width: 900px)").matches) {
+                setSidebarOpen((value) => !value);
+              } else {
+                setSidebarCollapsed((value) => {
+                  const next = !value;
+                  window.localStorage.setItem("anina-sidebar-collapsed", String(next));
+                  return next;
+                });
+              }
+            }}>
             <span/><span/><span/>
           </button>
           <strong>{pageTitle}</strong>
@@ -152,9 +164,12 @@ function DashboardNav({ sidebarOpen, setSidebarOpen }) {
 function Dashboard() {
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    window.localStorage.getItem("anina-sidebar-collapsed") === "true");
   return (
-    <div className="dashboard-shell">
-      <DashboardNav sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+    <div className={"dashboard-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+      <DashboardNav sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}
+        sidebarCollapsed={sidebarCollapsed} setSidebarCollapsed={setSidebarCollapsed} />
       <main className="dashboard-content">
         <Routes>
           {user.role === "client" && <Route index element={<ClientDashboard />} />}
