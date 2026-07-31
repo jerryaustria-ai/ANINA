@@ -20,6 +20,8 @@ import PromoCodes from "./pages/PromoCodes.jsx";
 import Attendance from "./pages/Attendance.jsx";
 import LandingCms from "./pages/LandingCms.jsx";
 import SystemSettings from "./pages/SystemSettings.jsx";
+import AccountSecurity from "./pages/AccountSecurity.jsx";
+import VerifyEmail from "./pages/VerifyEmail.jsx";
 import Avatar from "./components/Avatar.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
@@ -239,7 +241,9 @@ function Dashboard() {
 
 function ProtectedDashboard() {
   const { user } = useAuth();
-  return user ? <Dashboard /> : <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword || !user.emailVerified) return <Navigate to="/account-security" replace />;
+  return <Dashboard />;
 }
 
 export default function App() {
@@ -255,6 +259,8 @@ export default function App() {
     <Route path="/guest/payment-result/:orderId" element={<PaymentResult />} />
     <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
     <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <Login mode="register" />} />
+    <Route path="/account-security" element={<AccountSecurity />} />
+    <Route path="/auth/verify-email" element={<VerifyEmail />} />
     <Route path="/dashboard/*" element={<ProtectedDashboard />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;

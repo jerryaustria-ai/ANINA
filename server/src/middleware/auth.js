@@ -13,6 +13,21 @@ export async function requireAuth(req, res, next) {
     if (!user || !user.active) return res.status(401).json({ error: "Account not found or disabled" });
 
     req.user = user;
+    const securityRoute = req.originalUrl.startsWith("/api/auth/me") ||
+      req.originalUrl.startsWith("/api/auth/change-password") ||
+      req.originalUrl.startsWith("/api/auth/resend-verification");
+    if (user.mustChangePassword && !securityRoute) {
+      return res.status(403).json({
+        error: "You must change your temporary password before continuing.",
+        code: "PASSWORD_CHANGE_REQUIRED",
+      });
+    }
+    if (!user.emailVerified && !securityRoute) {
+      return res.status(403).json({
+        error: "Verify your email address before continuing.",
+        code: "EMAIL_VERIFICATION_REQUIRED",
+      });
+    }
     next();
   } catch (err) {
     return res.status(401).json({ error: "Invalid or expired session" });

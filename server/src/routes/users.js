@@ -8,6 +8,8 @@ import { hashPassword, verifyPassword } from "../services/password.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { canManageUser, isSuperAdmin, SUPER_ADMIN_ROLE } from "../utils/roles.js";
+import crypto from "node:crypto";
+import { sendAccountVerificationEmail } from "../services/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -72,9 +74,16 @@ router.post(
     if (role === SUPER_ADMIN_ROLE && !isSuperAdmin(req.user.role)) {
       throw new HttpError(403, "Only a Super Admin can create a Super Admin account");
     }
+    if (role === SUPER_ADMIN_ROLE && (password.length < 12 ||
+        !/[a-z]/.test(password) || !/[A-Z]/.test(password) ||
+        !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password))) {
+      throw new HttpError(400, "Super Admin temporary passwords must be at least 12 characters and include upper, lower, number, and symbol");
+    }
     validatePicture(picture);
     if (await User.findOne({ email })) throw new HttpError(409, "A user with that email already exists");
 
+    const superAdminAccount = role === SUPER_ADMIN_ROLE;
+    const rawVerificationToken = superAdminAccount ? crypto.randomBytes(32).toString("hex") : "";
     const user = await User.create({
       email,
       name: name?.trim() || email.split("@")[0],
@@ -82,7 +91,29 @@ router.post(
       phone: phone || "",
       picture,
       passwordHash: await hashPassword(password),
+      mustChangePassword: superAdminAccount,
+      emailVerified: !superAdminAccount,
+      emailVerificationTokenHash: superAdminAccount
+        ? crypto.createHash("sha256").update(rawVerificationToken).digest("hex") : "",
+      emailVerificationExpiresAt: superAdminAccount
+        ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
     });
+    if (superAdminAccount) {
+      try {
+        const baseUrl = String(process.env.APP_BASE_URL || "").replace(/\/$/, "");
+        if (!baseUrl) throw new HttpError(503, "APP_BASE_URL is required to verify a Super Admin account");
+        const result = await sendAccountVerificationEmail({
+          email: user.email, name: user.name,
+          verificationUrl: `${baseUrl}/auth/verify-email#token=${encodeURIComponent(rawVerificationToken)}`,
+        });
+        if (result.status === "skipped") {
+          throw new HttpError(503, "Email delivery must be configured before creating a Super Admin");
+        }
+      } catch (error) {
+        await User.deleteOne({ _id: user._id });
+        throw error;
+      }
+    }
     await createAuditLog({
       actor: req.user, action: "USER_CREATED",
       description: `Created ${user.role} account for ${user.name}.`,
@@ -178,8 +209,15 @@ router.patch(
       user.active = !!body.active;
     }
     if (body.password) {
-      if (typeof body.password !== "string" || body.password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
+      const minimum = user.role === SUPER_ADMIN_ROLE ? 12 : 8;
+      if (typeof body.password !== "string" || body.password.length < minimum) {
+        throw new HttpError(400, `Password must be at least ${minimum} characters`);
+      }
       user.passwordHash = await hashPassword(body.password);
+      if (user.role === SUPER_ADMIN_ROLE) {
+        user.mustChangePassword = true;
+        user.passwordChangedAt = null;
+      }
     }
 
     await user.save();

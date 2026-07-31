@@ -22,6 +22,27 @@ const transporter = smtpConfigured
     })
   : null;
 
+export async function sendAccountVerificationEmail({ email, name, verificationUrl }) {
+  if (!transporter) return { status: "skipped", id: "" };
+  const result = await transporter.sendMail({
+    from: FROM,
+    to: email,
+    subject: "Verify your ANINA Super Admin email",
+    html: `<!doctype html><html><body style="margin:0;background:#f5f1eb;font-family:Arial,sans-serif;color:#2d2925">
+      <div style="max-width:620px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e4ddd4;border-radius:12px">
+        <div style="font:600 24px Georgia,serif;letter-spacing:7px;color:#55493e">ANINA</div>
+        <h1 style="font:400 30px Georgia,serif">Verify your email</h1>
+        <p style="line-height:1.65;color:#5c554e">Hello ${escape(name)}, verify this email address before using the protected Super Admin dashboard.</p>
+        <p style="margin:26px 0"><a href="${escape(verificationUrl)}" style="display:inline-block;padding:13px 20px;background:#586951;color:#fff;text-decoration:none;border-radius:6px">Verify Email Address</a></p>
+        <p style="font-size:12px;color:#776f67">This single-use link expires after 24 hours. ANINA will never email your password.</p>
+      </div></body></html>`,
+  });
+  if (!result.accepted?.length || result.rejected?.length) {
+    throw new Error("SMTP did not accept the Super Admin verification email");
+  }
+  return { status: "sent", id: result.messageId || "" };
+}
+
 const money = (amount, currency = "PHP") =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency }).format(Number(amount || 0));
 const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({

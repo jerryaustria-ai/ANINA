@@ -7,6 +7,9 @@ function safeSnapshot(value) {
     : value;
   const copy = JSON.parse(JSON.stringify(source));
   delete copy.passwordHash;
+  delete copy.emailVerificationTokenHash;
+  delete copy.mfaSecret;
+  delete copy.mfaRecoveryCodes;
   if (typeof copy.picture === "string" && copy.picture.startsWith("data:")) {
     copy.picture = "[profile image omitted]";
   }

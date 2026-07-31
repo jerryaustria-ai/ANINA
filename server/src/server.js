@@ -27,6 +27,7 @@ import {
   startNotificationCleanup,
 } from "./services/notificationCleanup.js";
 import { cleanupBlankCashConfirmationTokens } from "./services/cashEnrollmentMaintenance.js";
+import { ensureDefaultSuperAdmin } from "./services/superAdminBootstrap.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -86,6 +87,13 @@ app.use((err, req, res, next) => {
 
 connectDB(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/anina")
   .then(async () => {
+    try {
+      const bootstrap = await ensureDefaultSuperAdmin();
+      if (bootstrap.status === "created") console.log("✓ Default Super Admin account created securely");
+    } catch (error) {
+      console.error("Super Admin bootstrap failed:", error.message);
+      process.exit(1);
+    }
     try {
       const cleaned = await cleanupBlankCashConfirmationTokens();
       if (cleaned) console.log(`✓ Removed ${cleaned} legacy blank cash confirmation token(s)`);

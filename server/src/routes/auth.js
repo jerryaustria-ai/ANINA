@@ -9,6 +9,8 @@ import { asyncHandler, HttpError } from "../utils/http.js";
 import { notifyAdmins } from "../services/notifications.js";
 import { createAuditLog } from "../services/audit.js";
 import { SUPER_ADMIN_ROLE } from "../utils/roles.js";
+import crypto from "node:crypto";
+import { sendAccountVerificationEmail } from "../services/email.js";
 
 const router = Router();
 
@@ -19,15 +21,7 @@ function adminEmails() {
     .filter(Boolean);
 }
 
-function superAdminEmails() {
-  return (process.env.SUPER_ADMIN_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function allowlistedRole(email) {
-  if (superAdminEmails().includes(email)) return SUPER_ADMIN_ROLE;
   if (adminEmails().includes(email)) return "admin";
   return null;
 }
@@ -40,6 +34,26 @@ function signToken(user) {
 
 function cleanEmail(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function validateNewPassword(password, user) {
+  if (typeof password !== "string" || password.length < 12 ||
+      !/[a-z]/.test(password) || !/[A-Z]/.test(password) ||
+      !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    throw new HttpError(400, "New password must be at least 12 characters and include upper, lower, number, and symbol");
+  }
+  if (password.toLowerCase().includes(String(user.email).split("@")[0].toLowerCase())) {
+    throw new HttpError(400, "New password must not contain your email name");
+  }
+}
+
+function verificationToken() {
+  const raw = crypto.randomBytes(32).toString("hex");
+  return {
+    raw,
+    hash: crypto.createHash("sha256").update(raw).digest("hex"),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  };
 }
 
 async function notifyRegistration(user) {
@@ -110,6 +124,87 @@ router.post(
   })
 );
 
+router.post(
+  "/change-password",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id).select("+passwordHash");
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new HttpError(401, "Current password is incorrect");
+    }
+    validateNewPassword(newPassword, user);
+    if (await verifyPassword(newPassword, user.passwordHash)) {
+      throw new HttpError(400, "New password must be different from the temporary password");
+    }
+    user.passwordHash = await hashPassword(newPassword);
+    user.mustChangePassword = false;
+    user.passwordChangedAt = new Date();
+    await user.save();
+    await createAuditLog({
+      actor: user, action: "PASSWORD_CHANGED",
+      description: `${user.name} changed their temporary password.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      updatedValue: { mustChangePassword: false, passwordChangedAt: user.passwordChangedAt },
+    });
+    res.json({ user: user.toPublic() });
+  })
+);
+
+router.post(
+  "/verify-email",
+  asyncHandler(async (req, res) => {
+    const raw = String(req.body?.token || "");
+    if (!raw) throw new HttpError(400, "Verification token is required");
+    const hash = crypto.createHash("sha256").update(raw).digest("hex");
+    const user = await User.findOne({
+      emailVerificationTokenHash: hash,
+      emailVerificationExpiresAt: { $gt: new Date() },
+    }).select("+emailVerificationTokenHash +emailVerificationExpiresAt");
+    if (!user) throw new HttpError(400, "This verification link is invalid or has expired");
+    user.emailVerified = true;
+    user.emailVerificationTokenHash = "";
+    user.emailVerificationExpiresAt = null;
+    await user.save();
+    await createAuditLog({
+      actor: user, action: "EMAIL_VERIFIED",
+      description: `${user.name} verified their email address.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      updatedValue: { emailVerified: true },
+    });
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  "/resend-verification",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (req.user.emailVerified) return res.json({ ok: true });
+    const token = verificationToken();
+    const user = await User.findById(req.user._id)
+      .select("+emailVerificationTokenHash +emailVerificationExpiresAt");
+    user.emailVerificationTokenHash = token.hash;
+    user.emailVerificationExpiresAt = token.expiresAt;
+    await user.save();
+    const baseUrl = String(process.env.APP_BASE_URL || "").replace(/\/$/, "");
+    if (!baseUrl) throw new HttpError(503, "Email verification URL is not configured");
+    const result = await sendAccountVerificationEmail({
+      email: user.email,
+      name: user.name,
+      verificationUrl: `${baseUrl}/auth/verify-email#token=${encodeURIComponent(token.raw)}`,
+    });
+    if (result.status === "skipped") throw new HttpError(503, "Email delivery is not configured");
+    await createAuditLog({
+      actor: user, action: "EMAIL_VERIFICATION_SENT",
+      description: `Sent a new verification link to ${user.name}.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+    });
+    res.json({ ok: true });
+  })
+);
+
 // POST /api/auth/google  { credential }  — Google ID token from the frontend.
 // Verifies it, upserts the user, and returns our own session token.
 router.post(
@@ -144,6 +239,7 @@ router.post(
         name: payload.name || email.split("@")[0],
         picture: payload.picture || "",
         role: assignedRole || "client",
+        emailVerified: true,
       });
       await notifyRegistration(user);
     } else {
@@ -152,6 +248,7 @@ router.post(
       user.googleId = user.googleId || payload.sub;
       user.name = payload.name || user.name;
       user.picture = payload.picture || user.picture;
+      user.emailVerified = true;
       if (assignedRole && user.role !== SUPER_ADMIN_ROLE) user.role = assignedRole;
       await user.save();
     }
