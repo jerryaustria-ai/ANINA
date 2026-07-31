@@ -21,6 +21,7 @@ import guestCheckoutRoutes from "./routes/guestCheckout.js";
 import checkInRoutes from "./routes/checkIn.js";
 import reportRoutes from "./routes/reports.js";
 import classDefinitionRoutes from "./routes/classDefinitions.js";
+import { publicLandingRouter, superAdminRouter } from "./routes/landingCms.js";
 import {
   cleanupExpiredReadNotifications,
   startNotificationCleanup,
@@ -51,6 +52,8 @@ app.use("/api/guest-checkout", guestCheckoutRoutes);
 app.use("/api/check-in", checkInRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/class-definitions", classDefinitionRoutes);
+app.use("/api/public/landing", publicLandingRouter);
+app.use("/api/super-admin", superAdminRouter);
 
 // In production, serve the Vite build from this same web service. API typos
 // remain JSON 404s; browser routes fall back to React's index.html.

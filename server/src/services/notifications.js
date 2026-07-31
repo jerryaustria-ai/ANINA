@@ -38,7 +38,7 @@ export async function notifyMany(recipients, details) {
 }
 
 export async function activeAdmins(excludeId = null) {
-  const query = { role: "admin", active: true };
+  const query = { role: { $in: ["admin", "super_admin"] }, active: true };
   if (excludeId) query._id = { $ne: excludeId };
   return User.find(query);
 }

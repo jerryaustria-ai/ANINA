@@ -7,6 +7,8 @@ import { verifyPassword } from "../services/password.js";
 import { hashPassword } from "../services/password.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { notifyAdmins } from "../services/notifications.js";
+import { createAuditLog } from "../services/audit.js";
+import { SUPER_ADMIN_ROLE } from "../utils/roles.js";
 
 const router = Router();
 
@@ -15,6 +17,19 @@ function adminEmails() {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function superAdminEmails() {
+  return (process.env.SUPER_ADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function allowlistedRole(email) {
+  if (superAdminEmails().includes(email)) return SUPER_ADMIN_ROLE;
+  if (adminEmails().includes(email)) return "admin";
+  return null;
 }
 
 function signToken(user) {
@@ -69,8 +84,28 @@ router.post(
 
     const user = await User.findOne({ email }).select("+passwordHash");
     if (!user || !user.active || !(await verifyPassword(password, user.passwordHash))) {
+      await createAuditLog({
+        actor: { _id: null, name: email || "Unknown login", email, role: "anonymous" },
+        action: "LOGIN_FAILED",
+        description: `Failed login attempt for ${email || "an unknown account"}.`,
+        entityType: "system",
+        entityId: `login:${email || "unknown"}:${Date.now()}`,
+        entityLabel: email || "Unknown account",
+        metadata: { ip: req.ip },
+      });
       throw new HttpError(401, "Invalid email or password");
     }
+    const assignedRole = allowlistedRole(email);
+    if (assignedRole && user.role !== SUPER_ADMIN_ROLE && user.role !== assignedRole) {
+      user.role = assignedRole;
+      await user.save();
+    }
+    await createAuditLog({
+      actor: user, action: "LOGIN_SUCCESS",
+      description: `${user.name} signed in.`,
+      entityType: "system", entityId: `login:${user._id}:${Date.now()}`,
+      entityLabel: user.name, metadata: { ip: req.ip },
+    });
     res.json({ token: signToken(user), user: user.toPublic() });
   })
 );
@@ -99,7 +134,7 @@ router.post(
     }
 
     const email = payload.email.toLowerCase();
-    const isAdmin = adminEmails().includes(email);
+    const assignedRole = allowlistedRole(email);
 
     let user = await User.findOne({ email });
     if (!user) {
@@ -108,15 +143,16 @@ router.post(
         email,
         name: payload.name || email.split("@")[0],
         picture: payload.picture || "",
-        role: isAdmin ? "admin" : "client",
+        role: assignedRole || "client",
       });
       await notifyRegistration(user);
     } else {
-      // Keep profile fresh; promote to admin if now on the allowlist.
+      // Keep profile fresh; promote allowlisted accounts without demoting a
+      // protected Super Admin if environment configuration changes.
       user.googleId = user.googleId || payload.sub;
       user.name = payload.name || user.name;
       user.picture = payload.picture || user.picture;
-      if (isAdmin && user.role !== "admin") user.role = "admin";
+      if (assignedRole && user.role !== SUPER_ADMIN_ROLE) user.role = assignedRole;
       await user.save();
     }
 
@@ -174,8 +210,8 @@ router.post(
     if (!email) throw new HttpError(400, "email required");
     let user = await User.findOne({ email });
     if (!user) {
-      const isAdmin = adminEmails().includes(email);
-      user = await User.create({ email, name: email.split("@")[0], role: isAdmin ? "admin" : "client" });
+      const assignedRole = allowlistedRole(email);
+      user = await User.create({ email, name: email.split("@")[0], role: assignedRole || "client" });
       await notifyAdmins({
         type: "NEW_USER_REGISTRATION",
         title: "New User Registration",

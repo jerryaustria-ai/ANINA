@@ -5,6 +5,7 @@ import { ClassDefinition } from "../models/ClassDefinition.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -13,7 +14,7 @@ router.use(requireAuth);
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const filter = req.query.all === "1" && req.user.role === "admin" ? {} : { active: true };
+    const filter = req.query.all === "1" && isAdminRole(req.user.role) ? {} : { active: true };
     const tiers = await MembershipTier.find(filter)
       .populate("eligibleClassIds", "title active")
       .sort("sortOrder name");

@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const notificationSchema = new mongoose.Schema(
   {
     recipientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    recipientRole: { type: String, enum: ["admin", "instructor", "client"], required: true, index: true },
+    recipientRole: { type: String, enum: ["super_admin", "admin", "instructor", "client"], required: true, index: true },
     type: { type: String, required: true, index: true },
     title: { type: String, required: true, trim: true },
     message: { type: String, required: true, trim: true },

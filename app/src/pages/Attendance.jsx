@@ -66,7 +66,7 @@ export default function Attendance() {
   const started = selected && now >= new Date(selected.startAt);
   const ended = selected && now >= new Date(selected.endAt);
   const canEdit = (booking) => Boolean(started && booking.paymentStatus === "paid" &&
-    !(booking.checkInUsedAt && user.role !== "admin"));
+    !(booking.checkInUsedAt && !["admin", "super_admin"].includes(user.role)));
 
   function markAllPresent() {
     if (!started) return toast.warning("Attendance is available only after the class starts.");
@@ -174,7 +174,7 @@ export default function Attendance() {
               {booking.paymentStatus !== "paid" && <div className="attendance-payment-warning">
                 Payment is still pending. Please complete your payment before attending the class.
               </div>}
-              {booking.checkInUsedAt && user.role !== "admin" && <div className="attendance-lock-note">
+              {booking.checkInUsedAt && !["admin", "super_admin"].includes(user.role) && <div className="attendance-lock-note">
                 QR check-in confirmed. Only an Admin can change this attendance.
               </div>}
               <div className="attendance-choice">

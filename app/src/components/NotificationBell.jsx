@@ -19,14 +19,14 @@ function showArrival(notification) {
 }
 
 function notificationPath(notification, role) {
-  if (role === "admin" && ["SCHEDULE_SUBMITTED_FOR_APPROVAL", "SCHEDULE_RESUBMITTED"].includes(notification.type)) {
+  if (["admin", "super_admin"].includes(role) && ["SCHEDULE_SUBMITTED_FOR_APPROVAL", "SCHEDULE_RESUBMITTED"].includes(notification.type)) {
     return `/dashboard/approvals?schedule=${notification.relatedScheduleId}`;
   }
-  if (role === "admin" && notification.relatedUserId && !notification.relatedScheduleId) {
+  if (["admin", "super_admin"].includes(role) && notification.relatedUserId && !notification.relatedScheduleId) {
     return `/dashboard/people?user=${notification.relatedUserId}`;
   }
   if (notification.relatedScheduleId) {
-    return role === "admin"
+    return ["admin", "super_admin"].includes(role)
       ? `/dashboard/schedule?schedule=${notification.relatedScheduleId}`
       : `/dashboard?schedule=${notification.relatedScheduleId}`;
   }

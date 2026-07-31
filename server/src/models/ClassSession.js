@@ -47,7 +47,7 @@ const classSessionSchema = new mongoose.Schema(
     recurrenceGroupId: { type: String, default: "", index: true },
     color: { type: String, default: "" }, // falls back to room colour on the client
     cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-    cancelledByRole: { type: String, enum: ["admin", "instructor", "client"], default: null },
+    cancelledByRole: { type: String, enum: ["super_admin", "admin", "instructor", "client"], default: null },
     cancelledAt: { type: Date, default: null },
     cancellationReason: { type: String, default: "" },
     cancellationRequestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },

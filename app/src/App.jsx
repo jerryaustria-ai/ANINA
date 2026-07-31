@@ -18,6 +18,8 @@ import ClientRecordDetails from "./pages/ClientRecordDetails.jsx";
 import ProfileSettings from "./pages/ProfileSettings.jsx";
 import PromoCodes from "./pages/PromoCodes.jsx";
 import Attendance from "./pages/Attendance.jsx";
+import LandingCms from "./pages/LandingCms.jsx";
+import SystemSettings from "./pages/SystemSettings.jsx";
 import Avatar from "./components/Avatar.jsx";
 const CheckInScanner = lazy(() => import("./pages/CheckInScanner.jsx"));
 
@@ -47,6 +49,23 @@ const MENU = {
     ["/dashboard/payments", "Payments", "payments"],
     ["/dashboard/memberships", "Memberships", "membership"],
     ["/dashboard/audit-trail", "Audit Trail", "audit"],
+    ["/dashboard/profile", "Profile", "profile"],
+  ],
+  super_admin: [
+    ["/dashboard", "Overview", "home"],
+    ["/dashboard/schedule", "Studio Schedule", "calendar"],
+    ["/dashboard/approvals", "Schedule Approval", "approve"],
+    ["/dashboard/attendance", "Attendance", "attendance"],
+    ["/dashboard/check-in", "QR Check-in", "scan"],
+    ["/dashboard/people", "People", "people"],
+    ["/dashboard/class-titles", "Classes", "classes"],
+    ["/dashboard/rooms", "Rooms", "rooms"],
+    ["/dashboard/tiers", "Class Plans", "plans"],
+    ["/dashboard/payments", "Payments", "payments"],
+    ["/dashboard/memberships", "Memberships", "membership"],
+    ["/dashboard/audit-trail", "Audit Trail", "audit"],
+    ["/dashboard/cms/landing", "Landing Page CMS", "settings"],
+    ["/dashboard/system-settings", "System Settings", "settings"],
     ["/dashboard/profile", "Profile", "profile"],
   ],
 };
@@ -156,7 +175,7 @@ function DashboardNav({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSideba
             </button>
             {profileOpen && <div className="profile-dropdown">
               <button onClick={() => nav("/dashboard/profile")}><MenuIcon name="profile" />Profile Settings</button>
-              {user.role === "admin" && <div className="profile-settings-group">
+              {["admin", "super_admin"].includes(user.role) && <div className="profile-settings-group">
                 <span><MenuIcon name="settings" />Settings</span>
                 <button onClick={() => nav("/dashboard/settings/promo-codes")}>Promo Codes</button>
               </div>}
@@ -185,13 +204,13 @@ function Dashboard() {
           {user.role === "client" && <Route index element={<ClientDashboard />} />}
           {user.role === "client" && <Route path="membership" element={<ClientMembership />} />}
           {user.role === "instructor" && <Route index element={<InstructorDashboard />} />}
-          {["admin", "instructor"].includes(user.role) &&
+          {["admin", "super_admin", "instructor"].includes(user.role) &&
             <Route path="attendance" element={<Attendance />} />}
-          {["admin", "instructor"].includes(user.role) && <Route path="check-in" element={
+          {["admin", "super_admin", "instructor"].includes(user.role) && <Route path="check-in" element={
             <Suspense fallback={<div className="spinner">Loading scanner…</div>}><CheckInScanner /></Suspense>
           } />}
           <Route path="profile" element={<ProfileSettings />} />
-          {user.role === "admin" && (
+          {["admin", "super_admin"].includes(user.role) && (
             <>
               <Route index element={<AdminDashboard view="overview" />} />
               <Route path="schedule" element={<AdminDashboard view="schedule" />} />
@@ -207,6 +226,10 @@ function Dashboard() {
               <Route path="clients/:clientId" element={<ClientRecordDetails />} />
             </>
           )}
+          {user.role === "super_admin" && <>
+            <Route path="cms/landing" element={<LandingCms />} />
+            <Route path="system-settings" element={<SystemSettings />} />
+          </>}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>

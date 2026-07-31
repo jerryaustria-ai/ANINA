@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-export const ROLES = ["client", "instructor", "admin"];
+export const ROLES = ["client", "instructor", "admin", "super_admin"];
 
 const bookingHistorySchema = new mongoose.Schema(
   {
@@ -43,6 +43,9 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ROLES, default: "client", index: true },
     phone: { type: String, default: "" },
     active: { type: Boolean, default: true },
+    archivedAt: { type: Date, default: null, index: true },
+    archivedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    archiveReason: { type: String, default: "" },
     lastGuestPurchase: { type: mongoose.Schema.Types.ObjectId, ref: "GuestPurchase", default: null },
     purchaseCount: { type: Number, default: 0, min: 0 },
     bookingHistory: { type: [bookingHistorySchema], default: [] },
@@ -63,6 +66,7 @@ userSchema.methods.toPublic = function () {
     role: this.role,
     phone: this.phone,
     active: this.active,
+    archivedAt: this.archivedAt,
     purchaseCount: this.purchaseCount,
     bio: this.bio,
     specialties: this.specialties,

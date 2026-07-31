@@ -22,6 +22,7 @@ import {
   reserveMembershipCredit,
   returnMembershipCredit,
 } from "../services/membership.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 
@@ -87,7 +88,7 @@ async function recordScheduleAudit(session, action, actor, dbSession = null, pre
 }
 
 function ownsOrAdmin(req, session) {
-  return req.user.role === "admin" || session.instructor._id?.toString() === req.user._id.toString() ||
+  return isAdminRole(req.user.role) || session.instructor._id?.toString() === req.user._id.toString() ||
     session.instructor.toString?.() === req.user._id.toString();
 }
 
@@ -266,7 +267,7 @@ router.post(
   requireRole("instructor", "admin"),
   asyncHandler(async (req, res) => {
     const { title, type = "group", room, startAt, endAt, capacity, minToRun = 1, notes, color, classDefinition } = req.body || {};
-    const instructorId = req.body.instructor && req.user.role === "admin" ? req.body.instructor : req.user._id;
+    const instructorId = req.body.instructor && isAdminRole(req.user.role) ? req.body.instructor : req.user._id;
 
     if (!title || !classDefinition || !room || !startAt || !endAt || !capacity) {
       throw new HttpError(400, "class, room, startAt, endAt and capacity are required");
@@ -523,7 +524,7 @@ router.post(
       notes = "", color = "", weekdays = [], until, instructor: requestedInstructor,
       frequency = "weekly", classDefinition,
     } = req.body || {};
-    const instructorId = req.user.role === "admin" && requestedInstructor
+    const instructorId = isAdminRole(req.user.role) && requestedInstructor
       ? requestedInstructor : req.user._id;
     if (!title || !classDefinition || !room || !startAt || !endAt || !capacity || !until) {
       throw new HttpError(400, "Recurring schedules require class, room, start, end, capacity, and end date.");
@@ -684,7 +685,7 @@ router.patch(
     const previousStatus = session.status;
     const timeChanged = (b.startAt !== undefined && new Date(b.startAt).getTime() !== session.startAt.getTime()) ||
       (b.endAt !== undefined && new Date(b.endAt).getTime() !== session.endAt.getTime());
-    const instructorId = req.user.role === "admin" && b.instructor ? b.instructor : session.instructor;
+    const instructorId = isAdminRole(req.user.role) && b.instructor ? b.instructor : session.instructor;
     let selectedOfficial = null;
     if (b.classDefinition !== undefined && b.classDefinition) {
       selectedOfficial = await ClassDefinition.findOne({ _id: b.classDefinition, active: true });
@@ -703,7 +704,7 @@ router.patch(
     }
     await validateSlot({ ...next, excludeId: session._id, instructorId, enforceNotPast: timeChanged });
 
-    if (req.user.role === "admin" && Array.isArray(b.clientIds)) {
+    if (isAdminRole(req.user.role) && Array.isArray(b.clientIds)) {
       const submittedIds = b.clientIds.map(String);
       const uniqueIds = [...new Set(submittedIds)];
       if (uniqueIds.length !== submittedIds.length) throw new HttpError(400, "A client cannot be assigned more than once");
@@ -744,7 +745,7 @@ router.patch(
     });
     if (b.room !== undefined) session.room = b.room;
     if (b.classDefinition !== undefined) session.classDefinition = b.classDefinition || null;
-    if (req.user.role === "admin" && b.instructor !== undefined) session.instructor = instructorId;
+    if (isAdminRole(req.user.role) && b.instructor !== undefined) session.instructor = instructorId;
     if (req.user.role === "instructor") {
       session.status = "pending_approval";
       session.isPublished = false;

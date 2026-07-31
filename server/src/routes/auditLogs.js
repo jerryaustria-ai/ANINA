@@ -3,10 +3,35 @@ import { AuditLog } from "../models/AuditLog.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { asyncHandler } from "../utils/http.js";
+import { SUPER_ADMIN_ROLE } from "../utils/roles.js";
+import { createAuditLog } from "../services/audit.js";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const csvCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+
+router.get(
+  "/export",
+  requireRole(SUPER_ADMIN_ROLE),
+  asyncHandler(async (req, res) => {
+    const logs = await AuditLog.find().sort({ createdAt: -1 }).lean();
+    await createAuditLog({
+      actor: req.user, action: "AUDIT_LOG_EXPORTED",
+      description: `Exported ${logs.length} complete audit log records.`,
+      entityType: "system", entityId: `audit-export:${Date.now()}`,
+      entityLabel: "Complete audit log export", metadata: { rowCount: logs.length },
+    });
+    const rows = [
+      ["Date", "Actor", "Role", "Action", "Description", "Entity Type", "Entity ID", "Entity Label"],
+      ...logs.map((log) => [log.createdAt.toISOString(), log.actorName, log.actorRole, log.action,
+        log.description, log.entityType, log.entityId, log.entityLabel]),
+    ];
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="anina-complete-audit-log.csv"');
+    res.send(`\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`);
+  })
+);
 
 router.get(
   "/",

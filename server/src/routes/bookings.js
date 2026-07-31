@@ -18,12 +18,13 @@ import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
 import { GuestPurchase } from "../models/GuestPurchase.js";
 import { sendPurchaseStatusEmailOnce } from "../services/email.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth);
 
 const isOwnerInstructor = (req, session) =>
-  req.user.role === "admin" || session.instructor.toString() === req.user._id.toString();
+  isAdminRole(req.user.role) || session.instructor.toString() === req.user._id.toString();
 
 async function finalizeEndedPresentBookings(filter = {}) {
   const candidates = await Booking.find({
@@ -229,7 +230,7 @@ router.post(
     if (!session) throw new HttpError(404, "Session not found");
     assertScheduleBookable(session);
 
-    const clientId = req.user.role === "admin" && req.body.clientId ? req.body.clientId : req.user._id;
+    const clientId = isAdminRole(req.user.role) && req.body.clientId ? req.body.clientId : req.user._id;
     const membership = await findEligibleMembership(clientId, session);
     if (!membership) {
       throw new HttpError(402, "An active eligible plan with remaining credit is required to book this class.");
@@ -415,7 +416,7 @@ async function saveAttendance({ booking, actor, status }) {
       "Payment is still pending. Please complete your payment before attending the class."
     );
   }
-  if (booking.checkInUsedAt && actor.role !== "admin") {
+  if (booking.checkInUsedAt && !isAdminRole(actor.role)) {
     throw new HttpError(409, "Attendance was confirmed by QR check-in and can only be changed by an Admin.");
   }
   if (!["accepted", "attended", "no_show"].includes(booking.status)) {
@@ -665,7 +666,7 @@ router.post(
     const booking = await Booking.findById(req.params.id).populate("session");
     if (!booking) throw new HttpError(404, "Booking not found");
     const isOwnerClient = booking.client.toString() === req.user._id.toString();
-    if (!isOwnerClient && req.user.role !== "admin") throw new HttpError(403, "Not your booking");
+    if (!isOwnerClient && !isAdminRole(req.user.role)) throw new HttpError(403, "Not your booking");
     const previous = booking.toObject({ depopulate: true });
 
     if (booking.status === "accepted") await releaseSeat(booking.session._id);

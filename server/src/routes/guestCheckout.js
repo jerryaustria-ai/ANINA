@@ -23,6 +23,7 @@ import {
   removePromoFromPurchase,
   revalidateAppliedPromo,
 } from "../services/promoCodes.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 const safeSession = (session) => session?.status === "published" &&
@@ -150,7 +151,7 @@ router.post("/orders", optionalAuth, asyncHandler(async (req, res) => {
 
   const duplicate = await findActiveDuplicate({ email, session, tier: selectedPlan });
   const adminOverrideEnabled = process.env.ALLOW_ADMIN_DUPLICATE_PURCHASE === "true";
-  const mayOverride = adminOverrideEnabled && req.user?.role === "admin";
+  const mayOverride = adminOverrideEnabled && isAdminRole(req.user?.role);
   const overrideRequested = mayOverride && req.body.continueAnyway === true;
   if (duplicate && !overrideRequested) {
     return res.status(409).json({

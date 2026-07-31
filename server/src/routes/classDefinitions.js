@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -14,7 +15,7 @@ const populate = (query) => query.populate("defaultRoom", "name maxCapacity loca
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const filter = req.user.role === "admin" && req.query.all === "1" ? {} : { active: true };
+    const filter = isAdminRole(req.user.role) && req.query.all === "1" ? {} : { active: true };
     const classes = await populate(ClassDefinition.find(filter).sort("title"));
     res.json({ classes: classes.map((item) => item.toPublic()) });
   })

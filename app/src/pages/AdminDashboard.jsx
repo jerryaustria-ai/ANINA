@@ -8,6 +8,7 @@ import { useScheduleRefresh } from "../useScheduleRefresh.js";
 import { bookingStatusLabel, fmtRange, fmtMoney, STATUS_LABEL, toLocalInput } from "../util.js";
 import { toast } from "react-toastify";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth.jsx";
 
 export default function AdminDashboard({ view }) {
   if (view === "overview") return <OverviewView />;
@@ -119,6 +120,7 @@ function OverviewView() {
 const blankAuditFilters = { from: "", to: "", user: "", role: "", action: "", reference: "" };
 
 function AuditTrailView() {
+  const { user } = useAuth();
   const [logs, setLogs] = useState([]);
   const [actions, setActions] = useState([]);
   const [filters, setFilters] = useState(blankAuditFilters);
@@ -163,7 +165,12 @@ function AuditTrailView() {
 
   return <div className="page audit-page">
     <div className="page-head"><div><h1>Audit Trail</h1>
-      <p>Read-only history of important system activity. Newest activity appears first.</p></div></div>
+      <p>Read-only history of important system activity. Newest activity appears first.</p></div>
+      {user.role === "super_admin" && <button className="btn" onClick={() =>
+        downloadApi("/audit-logs/export", "anina-complete-audit-log.csv")
+          .then(() => toast.success("Complete audit log exported."))
+          .catch((error) => toast.error(error.message))}>Export Complete Audit Log</button>}
+    </div>
 
     <form className="audit-filters" onSubmit={applyFilters}>
       <div className="field"><label>From</label><input type="date" value={filters.from}
@@ -174,7 +181,7 @@ function AuditTrailView() {
         onChange={(event) => setFilters({ ...filters, user: event.target.value })} /></div>
       <div className="field"><label>User role</label><select value={filters.role}
         onChange={(event) => setFilters({ ...filters, role: event.target.value })}>
-        <option value="">All roles</option><option value="admin">Admin</option>
+        <option value="">All roles</option>{user.role === "super_admin" && <option value="super_admin">Super Admin</option>}<option value="admin">Admin</option>
         <option value="instructor">Instructor</option><option value="client">Client</option>
       </select></div>
       <div className="field"><label>Action type</label><select value={filters.action}
@@ -1211,6 +1218,8 @@ function resizeProfilePicture(file) {
 }
 
 function PeopleView() {
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser.role === "super_admin";
   const [users, setUsers] = useState([]);
   const [add, setAdd] = useState(null);
   const [editUser, setEditUser] = useState(null);
@@ -1260,6 +1269,29 @@ function PeopleView() {
       toast.success(`${u.name} permanently deleted.`);
     }
     catch (e) { e.status === 409 ? toast.warning(e.message) : toast.error(e.message); }
+  }
+
+  async function archiveUser(u) {
+    const reason = window.prompt(`Reason for archiving ${u.name}:`);
+    if (!reason?.trim()) return;
+    try {
+      await api(`/users/${u.id}/archive`, { method: "POST", body: { reason } });
+      await load();
+      toast.info(`${u.name} was archived and can no longer sign in.`);
+    } catch (error) { toast.error(error.message); }
+  }
+
+  async function permanentlyDeleteUser(u) {
+    const reason = window.prompt(`Permanent deletion reason for ${u.name}:`);
+    if (!reason?.trim()) return;
+    const password = window.prompt("Re-enter your Super Admin password:");
+    if (!password) return;
+    if (!window.confirm(`Permanently delete archived account ${u.name}? This cannot be undone.`)) return;
+    try {
+      await api(`/users/${u.id}/permanent`, { method: "DELETE", body: { reason, password } });
+      await load();
+      toast.success(`${u.name} was permanently deleted.`);
+    } catch (error) { toast.error(error.message); }
   }
 
   async function refreshDeleteReview() {
@@ -1320,7 +1352,9 @@ function PeopleView() {
   return (
     <div className="page">
       <div className="page-head">
-        <div><h1>People</h1><p>Add users, promote clients to instructors, or manage admins.</p></div>
+        <div><h1>People</h1><p>{isSuperAdmin
+          ? "Manage all user roles, including protected Super Admin accounts."
+          : "Add users, promote clients to instructors, or manage admins."}</p></div>
         <button className="btn" onClick={() => setAdd({ ...blankUser })}>+ Add user</button>
       </div>
       <ul className="roster">
@@ -1338,11 +1372,19 @@ function PeopleView() {
               <option value="client">client</option>
               <option value="instructor">instructor</option>
               <option value="admin">admin</option>
+              {isSuperAdmin && <option value="super_admin">super admin</option>}
             </select>
             {u.active
               ? <button className="btn ghost sm" onClick={() => setActive(u, false)}>Deactivate</button>
               : <button className="btn ghost sm" onClick={() => setActive(u, true)}>Reactivate</button>}
-            <button className="btn danger sm" onClick={() => removeUser(u)}>Delete</button>
+            {isSuperAdmin ? <>
+              {!u.archivedAt
+                ? <button className="btn danger sm" onClick={() => archiveUser(u)}>Archive</button>
+                : <button className="btn ghost sm" onClick={() =>
+                  api(`/users/${u.id}/restore`, { method: "POST" }).then(load)
+                    .then(() => toast.success(`${u.name} restored.`)).catch((error) => toast.error(error.message))}>Restore</button>}
+              {u.archivedAt && <button className="btn danger sm" onClick={() => permanentlyDeleteUser(u)}>Delete permanently</button>}
+            </> : <button className="btn danger sm" onClick={() => removeUser(u)}>Delete</button>}
           </li>
         ))}
       </ul>
@@ -1382,6 +1424,7 @@ function PeopleView() {
                 <option value="client">Client</option>
                 <option value="instructor">Instructor</option>
                 <option value="admin">Admin</option>
+                {isSuperAdmin && <option value="super_admin">Super Admin</option>}
               </select></div>
             <p className="meta-line">They can use the password above or Google with the same email. Google keeps the role you set.</p>
           </div>
@@ -1416,6 +1459,7 @@ function PeopleView() {
             <div className="field"><label>Role</label>
               <select value={editUser.role} onChange={(e) => setEditUser({ ...editUser, role: e.target.value })}>
                 <option value="client">Client</option><option value="instructor">Instructor</option><option value="admin">Admin</option>
+                {isSuperAdmin && <option value="super_admin">Super Admin</option>}
               </select></div>
             <div className="field"><label>Status</label>
               <select value={editUser.active ? "active" : "inactive"} onChange={(e) => setEditUser({ ...editUser, active: e.target.value === "active" })}>

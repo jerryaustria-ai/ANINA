@@ -5,6 +5,8 @@ import { User } from "../models/User.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { createAuditLog } from "../services/audit.js";
+import { isSuperAdmin } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
@@ -120,6 +122,15 @@ router.get(
     const values = rows.map((row) => Object.values(row));
     if (!["csv", "excel"].includes(format)) {
       throw new HttpError(400, "Export format must be CSV or Excel.");
+    }
+    if (isSuperAdmin(req.user.role)) {
+      await createAuditLog({
+        actor: req.user, action: "DATA_EXPORTED",
+        description: `Exported ${rows.length} booking report records as ${format.toUpperCase()}.`,
+        entityType: "system", entityId: `booking-export:${Date.now()}`,
+        entityLabel: "Booking report export",
+        metadata: { format, rowCount: rows.length, filters: req.query },
+      });
     }
     const separator = format === "excel" ? "\t" : ",";
     const encode = format === "excel"

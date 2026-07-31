@@ -12,6 +12,7 @@ import { Booking } from "../models/Booking.js";
 import { hasPriorClientActivity } from "../services/firstTimer.js";
 import { createNotification } from "../services/notifications.js";
 import { createAuditLog } from "../services/audit.js";
+import { isAdminRole } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -265,7 +266,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const m = await Membership.findById(req.params.id).populate("tier");
     if (!m) throw new HttpError(404, "Membership not found");
-    if (req.user.role !== "admin" && m.client.toString() !== req.user._id.toString()) {
+    if (!isAdminRole(req.user.role) && m.client.toString() !== req.user._id.toString()) {
       throw new HttpError(403, "Not your membership");
     }
     const cancelled = await xendit.cancelSubscription(m.xenditPlanId, m.referenceId);
@@ -436,7 +437,7 @@ router.post(
     if (!allowDevBilling()) throw new HttpError(404, "Not found");
     const m = await Membership.findById(req.params.id).populate("tier");
     if (!m) throw new HttpError(404, "Membership not found");
-    if (req.user.role !== "admin" && m.client.toString() !== req.user._id.toString()) {
+    if (!isAdminRole(req.user.role) && m.client.toString() !== req.user._id.toString()) {
       throw new HttpError(403, "Not your membership");
     }
     await applyEvent(m, req.body?.event || "activated");

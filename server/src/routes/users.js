@@ -4,9 +4,10 @@ import { ClassSession } from "../models/ClassSession.js";
 import { Booking } from "../models/Booking.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireRole } from "../middleware/requireRole.js";
-import { hashPassword } from "../services/password.js";
+import { hashPassword, verifyPassword } from "../services/password.js";
 import { createAuditLog } from "../services/audit.js";
 import { asyncHandler, HttpError } from "../utils/http.js";
+import { canManageUser, isSuperAdmin, SUPER_ADMIN_ROLE } from "../utils/roles.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -17,6 +18,16 @@ function validatePicture(picture) {
   if (picture && ((!validData && !validUrl) || picture.length > 500_000)) {
     throw new HttpError(400, "Profile picture must be a JPEG, PNG, or WebP image under 500 KB");
   }
+}
+
+async function findVisibleUser(req, id, password = false) {
+  const query = User.findById(id);
+  if (password) query.select("+passwordHash");
+  const user = await query;
+  if (!user || !canManageUser(req.user.role, user.role)) {
+    throw new HttpError(404, "User not found");
+  }
+  return user;
 }
 
 // Instructors list — used by client booking UI and admin assignment.
@@ -34,7 +45,13 @@ router.get(
   requireRole("admin"),
   asyncHandler(async (req, res) => {
     const filter = {};
-    if (req.query.role) filter.role = req.query.role;
+    if (!isSuperAdmin(req.user.role)) filter.role = { $ne: SUPER_ADMIN_ROLE };
+    if (req.query.role) {
+      if (req.query.role === SUPER_ADMIN_ROLE && !isSuperAdmin(req.user.role)) {
+        return res.json({ users: [] });
+      }
+      filter.role = req.query.role;
+    }
     const users = await User.find(filter).sort("name");
     res.json({ users: users.map((u) => u.toPublic()) });
   })
@@ -52,6 +69,9 @@ router.post(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Invalid email");
     if (typeof password !== "string" || password.length < 8) throw new HttpError(400, "Password must be at least 8 characters");
     if (!ROLES.includes(role)) throw new HttpError(400, "Invalid role");
+    if (role === SUPER_ADMIN_ROLE && !isSuperAdmin(req.user.role)) {
+      throw new HttpError(403, "Only a Super Admin can create a Super Admin account");
+    }
     validatePicture(picture);
     if (await User.findOne({ email })) throw new HttpError(409, "A user with that email already exists");
 
@@ -112,8 +132,7 @@ router.get(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
+    const user = await findVisibleUser(req, req.params.id);
     res.json({ user: user.toPublic() });
   })
 );
@@ -123,8 +142,7 @@ router.patch(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id).select("+passwordHash");
-    if (!user) throw new HttpError(404, "User not found");
+    const user = await findVisibleUser(req, req.params.id, true);
     const previous = user.toObject({ depopulate: true });
 
     const body = req.body || {};
@@ -149,7 +167,10 @@ router.patch(
     }
     if (body.role !== undefined) {
       if (!ROLES.includes(body.role)) throw new HttpError(400, "Invalid role");
-      if (user._id.equals(req.user._id) && body.role !== "admin") throw new HttpError(400, "You can't demote yourself");
+      if (body.role === SUPER_ADMIN_ROLE && !isSuperAdmin(req.user.role)) {
+        throw new HttpError(403, "Only a Super Admin can assign this role");
+      }
+      if (user._id.equals(req.user._id) && body.role !== req.user.role) throw new HttpError(400, "You can't change your own role");
       user.role = body.role;
     }
     if (body.active !== undefined) {
@@ -179,9 +200,11 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { role } = req.body || {};
     if (!ROLES.includes(role)) throw new HttpError(400, "Invalid role");
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
-    if (user._id.toString() === req.user._id.toString() && role !== "admin") {
+    if (role === SUPER_ADMIN_ROLE && !isSuperAdmin(req.user.role)) {
+      throw new HttpError(403, "Only a Super Admin can assign this role");
+    }
+    const user = await findVisibleUser(req, req.params.id);
+    if (user._id.toString() === req.user._id.toString() && role !== req.user.role) {
       throw new HttpError(400, "You can't demote yourself");
     }
     const previousRole = user.role;
@@ -202,8 +225,7 @@ router.patch(
   "/:id/active",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
+    const user = await findVisibleUser(req, req.params.id);
     if (user._id.toString() === req.user._id.toString() && !req.body.active) {
       throw new HttpError(400, "You can't deactivate yourself");
     }
@@ -225,8 +247,7 @@ router.get(
   "/:id/dependencies",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
+    const user = await findVisibleUser(req, req.params.id);
 
     const [sessions, bookings] = await Promise.all([
       ClassSession.find({ instructor: user._id })
@@ -271,8 +292,7 @@ router.delete(
   "/:id",
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const user = await User.findById(req.params.id);
-    if (!user) throw new HttpError(404, "User not found");
+    const user = await findVisibleUser(req, req.params.id);
     if (user._id.toString() === req.user._id.toString()) throw new HttpError(400, "You can't delete yourself");
 
     const [sessions, bookings] = await Promise.all([
@@ -291,6 +311,85 @@ router.delete(
     });
     await user.deleteOne();
     res.json({ ok: true, deleted: true });
+  })
+);
+
+// Super Admin: soft-delete/archive first. Archived accounts cannot sign in
+// and remain available for historical relationships and restoration.
+router.post(
+  "/:id/archive",
+  requireRole(SUPER_ADMIN_ROLE),
+  asyncHandler(async (req, res) => {
+    const user = await findVisibleUser(req, req.params.id);
+    if (user._id.equals(req.user._id)) throw new HttpError(400, "You can't archive yourself");
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) throw new HttpError(400, "Archive reason is required");
+    const previous = user.toObject({ depopulate: true });
+    user.active = false;
+    user.archivedAt = new Date();
+    user.archivedBy = req.user._id;
+    user.archiveReason = reason;
+    await user.save();
+    await createAuditLog({
+      actor: req.user, action: "USER_ARCHIVED",
+      description: `Archived ${user.name}'s account. Reason: ${reason}`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: previous, updatedValue: user, metadata: { reason },
+    });
+    res.json({ user: user.toPublic() });
+  })
+);
+
+router.post(
+  "/:id/restore",
+  requireRole(SUPER_ADMIN_ROLE),
+  asyncHandler(async (req, res) => {
+    const user = await findVisibleUser(req, req.params.id);
+    const previous = user.toObject({ depopulate: true });
+    user.active = true;
+    user.archivedAt = null;
+    user.archivedBy = null;
+    user.archiveReason = "";
+    await user.save();
+    await createAuditLog({
+      actor: req.user, action: "USER_RESTORED",
+      description: `Restored ${user.name}'s account.`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: previous, updatedValue: user,
+    });
+    res.json({ user: user.toPublic() });
+  })
+);
+
+router.delete(
+  "/:id/permanent",
+  requireRole(SUPER_ADMIN_ROLE),
+  asyncHandler(async (req, res) => {
+    const actor = await User.findById(req.user._id).select("+passwordHash");
+    const user = await findVisibleUser(req, req.params.id);
+    if (user._id.equals(req.user._id)) throw new HttpError(400, "You can't permanently delete yourself");
+    if (!user.archivedAt) throw new HttpError(409, "Archive this account before permanent deletion");
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) throw new HttpError(400, "Deletion reason is required");
+    if (!(await verifyPassword(String(req.body?.password || ""), actor.passwordHash))) {
+      throw new HttpError(401, "Password confirmation failed");
+    }
+    const [sessions, bookings] = await Promise.all([
+      ClassSession.countDocuments({ instructor: user._id }),
+      Booking.countDocuments({ client: user._id }),
+    ]);
+    if (sessions || bookings || user.bookingHistory?.length) {
+      throw new HttpError(409, "This account has protected historical or financial records and cannot be permanently deleted");
+    }
+    const snapshot = user.toObject({ depopulate: true });
+    await createAuditLog({
+      actor: req.user, action: "USER_PERMANENTLY_DELETED",
+      description: `Permanently deleted archived account ${user.name}. Reason: ${reason}`,
+      entityType: "user", entityId: user._id, entityLabel: user.name,
+      previousValue: snapshot, metadata: { reason },
+    });
+    await user.deleteOne();
+    res.json({ ok: true });
   })
 );
 

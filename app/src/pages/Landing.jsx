@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
+import { api } from "../api.js";
 
 const services = [
   {
@@ -29,6 +30,16 @@ export default function Landing() {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [cms, setCms] = useState(null);
+
+  useEffect(() => {
+    api("/public/landing").then(({ landing }) => {
+      setCms(landing);
+      if (landing?.seo?.title) document.title = landing.seo.title;
+      const description = document.querySelector('meta[name="description"]');
+      if (description && landing?.seo?.description) description.content = landing.seo.description;
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const updateNav = () => setScrolled(window.scrollY > 24);
@@ -49,6 +60,16 @@ export default function Landing() {
       revealObserver.disconnect();
     };
   }, []);
+
+  const hero = cms?.hero || {};
+  const visibleSections = [...(cms?.sections || [])]
+    .filter((section) => section.visible)
+    .sort((a, b) => a.order - b.order);
+  const sectionByType = (type) => visibleSections.find((section) => section.type === type);
+  const about = sectionByType("about");
+  const servicesSection = sectionByType("services");
+  const serviceItems = servicesSection?.content?.items?.length ? servicesSection.content.items : services;
+  const cta = sectionByType("cta");
 
   return <div className="landing">
     <header className={`landing-nav${scrolled ? " is-scrolled" : ""}`}>
@@ -71,15 +92,16 @@ export default function Landing() {
 
     <main>
       <section className="landing-hero" id="home">
-        <img src="/assets/images/hero.jpg" alt="ANINA Wellness Sanctuary training space" />
+        <img src={hero.image || "/assets/images/hero.jpg"} alt="ANINA Wellness Sanctuary training space" />
         <div className="landing-hero-shade" />
         <div className="landing-hero-content">
-          <p className="landing-kicker">BF Homes · Parañaque</p>
-          <h1>Train once.<br />For a longer life.</h1>
-          <p>Longevity, mobility, strength, and recovery under one roof—guided by thoughtful coaching and built for the long game.</p>
+          <p className="landing-kicker">{hero.kicker || "BF Homes · Parañaque"}</p>
+          <h1>{(hero.headline || "Train once.\nFor a longer life.").split("\n").map((line, index) =>
+            <span key={`${line}-${index}`}>{line}{index === 0 && <br />}</span>)}</h1>
+          <p>{hero.description || "Longevity, mobility, strength, and recovery under one roof—guided by thoughtful coaching and built for the long game."}</p>
           <div className="landing-actions">
-            <Link className="landing-primary" to="/schedule">View Schedule</Link>
-            <a className="landing-secondary" href="#services">Explore Services</a>
+            <Link className="landing-primary" to={hero.primaryUrl || "/schedule"}>{hero.primaryLabel || "View Schedule"}</Link>
+            <a className="landing-secondary" href={hero.secondaryUrl || "#services"}>{hero.secondaryLabel || "Explore Services"}</a>
           </div>
         </div>
         <a className="landing-scroll-cue" href="#about" aria-label="Scroll to content">
@@ -94,41 +116,50 @@ export default function Landing() {
         </div>
       </div>
 
-      <section className="landing-about" id="about">
+      {(!cms || about) && <section className="landing-about" id="about">
         <div className="landing-reveal" data-reveal>
-          <p className="landing-kicker">The ANINA approach</p>
-          <h2>Your body is one system. Your training should be too.</h2>
+          <p className="landing-kicker">{about?.content?.kicker || "The ANINA approach"}</p>
+          <h2>{about?.content?.headline || "Your body is one system. Your training should be too."}</h2>
         </div>
-        <p className="landing-reveal" data-reveal>ANINA brings assessment, coached movement, progressive strength, and recovery together in one calm space. Every session is designed to help you move better now while building capacity for the years ahead.</p>
-      </section>
+        <p className="landing-reveal" data-reveal>{about?.content?.text || "ANINA brings assessment, coached movement, progressive strength, and recovery together in one calm space. Every session is designed to help you move better now while building capacity for the years ahead."}</p>
+      </section>}
 
-      <section className="landing-services" id="services">
+      {(!cms || servicesSection) && <section className="landing-services" id="services">
         <div className="landing-section-head landing-reveal" data-reveal>
-          <p className="landing-kicker">Our services</p>
-          <h2>One practice, built around you.</h2>
+          <p className="landing-kicker">{servicesSection?.content?.kicker || "Our services"}</p>
+          <h2>{servicesSection?.content?.headline || "One practice, built around you."}</h2>
         </div>
         <div className="landing-service-grid">
-          {services.map((service, index) => <article className="landing-reveal" data-reveal
+          {serviceItems.map((service, index) => <article className="landing-reveal" data-reveal
             style={{ "--reveal-delay": `${index * 110}ms` }} key={service.title}>
             <div className="landing-service-image"><img src={service.image} alt="" /></div>
             <div><h3>{service.title}</h3><p>{service.text}</p></div>
           </article>)}
         </div>
-      </section>
+      </section>}
 
-      <section className="landing-cta landing-reveal" data-reveal>
-        <p className="landing-kicker">Ready when you are</p>
-        <h2>Find a class that fits your next chapter.</h2>
-        <p>Sign in to view the live schedule, manage your class plans, and request your spot.</p>
-        <Link className="landing-primary" to="/schedule">View Schedule</Link>
-      </section>
+      {visibleSections.filter((section) => !["about", "services", "cta"].includes(section.type)).map((section) =>
+        <section className="landing-cta landing-reveal" data-reveal key={section.key}>
+          <p className="landing-kicker">{section.title}</p>
+          <h2>{section.content?.headline || section.title}</h2>
+          {section.content?.text && <p>{section.content.text}</p>}
+        </section>)}
+
+      {(!cms || cta) && <section className="landing-cta landing-reveal" data-reveal>
+        <p className="landing-kicker">{cta?.content?.kicker || "Ready when you are"}</p>
+        <h2>{cta?.content?.headline || "Find a class that fits your next chapter."}</h2>
+        <p>{cta?.content?.text || "Sign in to view the live schedule, manage your class plans, and request your spot."}</p>
+        <Link className="landing-primary" to={cta?.content?.buttonUrl || "/schedule"}>{cta?.content?.buttonLabel || "View Schedule"}</Link>
+      </section>}
     </main>
 
     <footer className="landing-footer" id="contact">
       <div><strong>ANINA Wellness Sanctuary</strong>
         <p>Longevity · Mobility · Strength · Recovery</p></div>
-      <div><p>hello@aninasanctuary.ph</p><p>South Metro Manila, Philippines</p></div>
-      <div><p>Mon–Sat 6am–9pm</p><p>Sun 7am–1pm</p></div>
+      <div><p>{cms?.contact?.email || "hello@aninasanctuary.ph"}</p><p>{cms?.contact?.address || "South Metro Manila, Philippines"}</p></div>
+      <div><p>{cms?.businessHours || "Mon–Sat 6am–9pm · Sun 7am–1pm"}</p>
+        {cms?.legalLinks?.terms && <a href={cms.legalLinks.terms}>Terms</a>}
+        {cms?.legalLinks?.privacy && <a href={cms.legalLinks.privacy}>Privacy</a>}</div>
       <p className="landing-copyright">© {new Date().getFullYear()} ANINA Wellness Sanctuary</p>
     </footer>
   </div>;
