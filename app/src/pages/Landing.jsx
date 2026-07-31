@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
 
@@ -20,12 +20,38 @@ const services = [
   },
 ];
 
+const marqueeItems = [
+  "Longevity", "Mobility", "Strength", "Recovery", "Healthspan",
+  "Breathwork", "Balance", "Resilience", "Coaching", "Community",
+];
+
 export default function Landing() {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const updateNav = () => setScrolled(window.scrollY > 24);
+    updateNav();
+    window.addEventListener("scroll", updateNav, { passive: true });
+
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.14, rootMargin: "0px 0px -7% 0px" });
+
+    document.querySelectorAll("[data-reveal]").forEach((element) => revealObserver.observe(element));
+    return () => {
+      window.removeEventListener("scroll", updateNav);
+      revealObserver.disconnect();
+    };
+  }, []);
 
   return <div className="landing">
-    <header className="landing-nav">
+    <header className={`landing-nav${scrolled ? " is-scrolled" : ""}`}>
       <a className="landing-brand" href="#home" aria-label="ANINA home">
         <img src="/assets/images/anina-logo.png" alt="ANINA Wellness Sanctuary" />
       </a>
@@ -56,30 +82,41 @@ export default function Landing() {
             <a className="landing-secondary" href="#services">Explore Services</a>
           </div>
         </div>
+        <a className="landing-scroll-cue" href="#about" aria-label="Scroll to content">
+          <span>Scroll</span><i />
+        </a>
       </section>
 
+      <div className="landing-marquee" aria-hidden="true">
+        <div className="landing-marquee-track">
+          {[...marqueeItems, ...marqueeItems].map((item, index) =>
+            <span key={`${item}-${index}`}>{item}<b>·</b></span>)}
+        </div>
+      </div>
+
       <section className="landing-about" id="about">
-        <div>
+        <div className="landing-reveal" data-reveal>
           <p className="landing-kicker">The ANINA approach</p>
           <h2>Your body is one system. Your training should be too.</h2>
         </div>
-        <p>ANINA brings assessment, coached movement, progressive strength, and recovery together in one calm space. Every session is designed to help you move better now while building capacity for the years ahead.</p>
+        <p className="landing-reveal" data-reveal>ANINA brings assessment, coached movement, progressive strength, and recovery together in one calm space. Every session is designed to help you move better now while building capacity for the years ahead.</p>
       </section>
 
       <section className="landing-services" id="services">
-        <div className="landing-section-head">
+        <div className="landing-section-head landing-reveal" data-reveal>
           <p className="landing-kicker">Our services</p>
           <h2>One practice, built around you.</h2>
         </div>
         <div className="landing-service-grid">
-          {services.map((service) => <article key={service.title}>
-            <img src={service.image} alt="" />
+          {services.map((service, index) => <article className="landing-reveal" data-reveal
+            style={{ "--reveal-delay": `${index * 110}ms` }} key={service.title}>
+            <div className="landing-service-image"><img src={service.image} alt="" /></div>
             <div><h3>{service.title}</h3><p>{service.text}</p></div>
           </article>)}
         </div>
       </section>
 
-      <section className="landing-cta">
+      <section className="landing-cta landing-reveal" data-reveal>
         <p className="landing-kicker">Ready when you are</p>
         <h2>Find a class that fits your next chapter.</h2>
         <p>Sign in to view the live schedule, manage your class plans, and request your spot.</p>
