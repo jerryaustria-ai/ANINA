@@ -41,7 +41,11 @@ const DEFAULT_CONTENT = {
       buttonUrl: "/schedule",
     } },
   ],
-  contact: { email: "hello@aninasanctuary.ph", address: "South Metro Manila, Philippines" },
+  contact: {
+    email: "hello@aninasanctuary.ph",
+    phone: "+63 917 000 0000",
+    address: "South Metro Manila, Philippines",
+  },
   socialLinks: {},
   businessHours: "Mon–Sat 6am–9pm · Sun 7am–1pm",
   legalLinks: { terms: "", privacy: "" },
@@ -233,4 +237,3 @@ superAdminRouter.put("/settings/:key", asyncHandler(async (req, res) => {
   });
   res.json({ setting });
 }));
-

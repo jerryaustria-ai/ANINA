@@ -80,6 +80,10 @@ a { color:var(--sage-deep); }
   display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:2rem; }
 .landing-footer strong { color:#fff; font-family:var(--display); font-size:1.5rem; letter-spacing:.08em; }
 .landing-footer p { margin:.45rem 0; font-size:.85rem; }
+.landing-contact-details { display:flex; flex-direction:column; align-items:flex-start; gap:.45rem; }
+.landing-contact-details a { color:rgba(255,255,255,.82); font-size:.85rem; text-decoration:none; }
+.landing-contact-details a:hover,.landing-contact-details a:focus-visible { color:#fff; text-decoration:underline; }
+.landing-contact-details p { margin:0; }
 .landing-copyright { grid-column:1/-1; border-top:1px solid rgba(255,255,255,.15); padding-top:1.3rem; }
 @keyframes landing-hero-in { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:none; } }
 @keyframes landing-hero-scale { from { transform:scale(1.035); } to { transform:scale(1); } }

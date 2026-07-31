@@ -155,6 +155,9 @@ export default function LandingCms() {
       <div className="cms-grid">
         <label>Email<input value={draft.contact?.email || ""} onChange={(event) =>
           setDraft({ ...draft, contact: { ...draft.contact, email: event.target.value } })} /></label>
+        <label>Contact number<input type="tel" value={draft.contact?.phone || ""} onChange={(event) =>
+          setDraft({ ...draft, contact: { ...draft.contact, phone: event.target.value } })}
+          placeholder="+63 917 000 0000" /></label>
         <label>Address<input value={draft.contact?.address || ""} onChange={(event) =>
           setDraft({ ...draft, contact: { ...draft.contact, address: event.target.value } })} /></label>
         <label className="wide">Business hours<input value={draft.businessHours || ""} onChange={(event) =>
@@ -190,4 +193,3 @@ export default function LandingCms() {
     </section>
   </div>;
 }
-

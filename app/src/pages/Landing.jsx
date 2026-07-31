@@ -156,7 +156,15 @@ export default function Landing() {
     <footer className="landing-footer" id="contact">
       <div><strong>ANINA Wellness Sanctuary</strong>
         <p>Longevity · Mobility · Strength · Recovery</p></div>
-      <div><p>{cms?.contact?.email || "hello@aninasanctuary.ph"}</p><p>{cms?.contact?.address || "South Metro Manila, Philippines"}</p></div>
+      <div className="landing-contact-details">
+        <a href={`mailto:${cms?.contact?.email || "hello@aninasanctuary.ph"}`}>
+          {cms?.contact?.email || "hello@aninasanctuary.ph"}
+        </a>
+        <a href={`tel:${String(cms?.contact?.phone || "+63 917 000 0000").replace(/[^\d+]/g, "")}`}>
+          {cms?.contact?.phone || "+63 917 000 0000"}
+        </a>
+        <p>{cms?.contact?.address || "South Metro Manila, Philippines"}</p>
+      </div>
       <div><p>{cms?.businessHours || "Mon–Sat 6am–9pm · Sun 7am–1pm"}</p>
         {cms?.legalLinks?.terms && <a href={cms.legalLinks.terms}>Terms</a>}
         {cms?.legalLinks?.privacy && <a href={cms.legalLinks.privacy}>Privacy</a>}</div>
