@@ -26,6 +26,20 @@ const marqueeItems = [
   "Breathwork", "Balance", "Resilience", "Coaching", "Community",
 ];
 
+function SocialIcon({ platform }) {
+  if (platform === "facebook") {
+    return <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor"
+        d="M13.8 22v-8.9h3l.45-3.47H13.8V7.42c0-1 .28-1.69 1.72-1.69h1.84V2.64c-.32-.04-1.41-.14-2.68-.14-2.65 0-4.47 1.62-4.47 4.59v2.54h-3v3.47h3V22h3.59Z" />
+    </svg>;
+  }
+  return <svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" strokeWidth="2" />
+    <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" strokeWidth="2" />
+    <circle cx="17.4" cy="6.7" r="1.15" fill="currentColor" />
+  </svg>;
+}
+
 export default function Landing() {
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -170,9 +184,13 @@ export default function Landing() {
         {(cms?.socialLinks?.facebook || cms?.socialLinks?.instagram) && <div className="landing-social-links">
           <span>Follow us</span>
           {cms?.socialLinks?.facebook && <a href={cms.socialLinks.facebook} target="_blank"
-            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Facebook">Facebook</a>}
+            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Facebook">
+            <SocialIcon platform="facebook" /><span className="landing-social-name">Facebook</span>
+          </a>}
           {cms?.socialLinks?.instagram && <a href={cms.socialLinks.instagram} target="_blank"
-            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Instagram">Instagram</a>}
+            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Instagram">
+            <SocialIcon platform="instagram" /><span className="landing-social-name">Instagram</span>
+          </a>}
         </div>}
         <div className="landing-legal-links">
         {cms?.legalLinks?.terms && <a href={cms.legalLinks.terms}>Terms</a>}
