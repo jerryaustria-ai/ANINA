@@ -165,9 +165,19 @@ export default function Landing() {
         </a>
         <p>{cms?.contact?.address || "South Metro Manila, Philippines"}</p>
       </div>
-      <div><p>{cms?.businessHours || "Mon–Sat 6am–9pm · Sun 7am–1pm"}</p>
+      <div className="landing-footer-meta">
+        <p>{cms?.businessHours || "Mon–Sat 6am–9pm · Sun 7am–1pm"}</p>
+        {(cms?.socialLinks?.facebook || cms?.socialLinks?.instagram) && <div className="landing-social-links">
+          <span>Follow us</span>
+          {cms?.socialLinks?.facebook && <a href={cms.socialLinks.facebook} target="_blank"
+            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Facebook">Facebook</a>}
+          {cms?.socialLinks?.instagram && <a href={cms.socialLinks.instagram} target="_blank"
+            rel="noreferrer" aria-label="ANINA Wellness Sanctuary on Instagram">Instagram</a>}
+        </div>}
+        <div className="landing-legal-links">
         {cms?.legalLinks?.terms && <a href={cms.legalLinks.terms}>Terms</a>}
         {cms?.legalLinks?.privacy && <a href={cms.legalLinks.privacy}>Privacy</a>}</div>
+      </div>
       <p className="landing-copyright">© {new Date().getFullYear()} ANINA Wellness Sanctuary</p>
     </footer>
   </div>;
